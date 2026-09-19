@@ -1,0 +1,6 @@
+# macOS
+.DS_Store
+
+# Live SQLite database (recreated automatically by config.php on first run)
+data/*.sqlite
+data/*.sqlite-journal

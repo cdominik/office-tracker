@@ -1,0 +1,940 @@
+:root {
+    --page-bg: #f7f8fa;
+    --surface: #fff;
+    --surface-2: #fafbfc;
+    --hover: #f0f2f5;
+    --border: #dfe3e8;
+    --border-strong: #c3c9d1;
+    --header-bg: #f3f5f8;
+    --header-text: #3c4450;
+    --text: #2b2f36;
+    --text-muted: #5a6472;
+    --text-faint: #8b93a1;
+    --accent: #3b6fd6;
+    --accent-bg: rgba(59, 111, 214, 0.10);
+    --green-bg: #d7ecdb;
+    --green-border: #a9d3b2;
+    --green-text: #1f5c34;
+    --red-bg: #f6dcdb;
+    --red-border: #e0aeab;
+    --red-text: #7a2e29;
+    /* Vivid-enough versions of the two status colours, for the small palette disc. */
+    --swatch-free: #74c186;
+    --swatch-occ: #db8079;
+    /* Faint M/F/T identity tints (left label cells) — a cool teal / blue / violet trio. */
+    --tint-m: #e3f0f2;
+    --tint-f: #eef3fb;
+    --tint-t: #f4eefb;
+    /* Diagonal-stripe colours for blocked / off-month / weekend cells. */
+    --stripe-a: var(--stripe-a);
+    --stripe-b: var(--stripe-b);
+    /* Divider line colours. */
+    --divider-room: #b3bac4;
+    --divider-week: #9aa2ad;
+    --divider-day: #7f8794;
+    --divider-ampm: #aeb6c0;
+    --radius: 10px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--page-bg);
+    color: var(--text);
+    margin: 0;
+    padding: 24px;
+    overflow-x: hidden; /* the day-swipe slide translates the grid; keep it off the page scrollbar */
+}
+
+h1 {
+    font-size: 20px;
+    margin: 0;
+    font-weight: 600;
+}
+
+.topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin-bottom: 14px;
+}
+
+/* --- Control bar: fixed-width left group so nav buttons never shift; the view group
+   sizes to its buttons (now four, incl. +Month+). --- */
+.controlbar {
+    display: grid;
+    grid-template-columns: 190px 1fr auto;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 12px;
+}
+
+.nav-group {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-start;
+}
+
+.nav-btn { min-width: 40px; text-align: center; }
+.today-btn { min-width: 64px; }
+.today-btn.is-current { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+.range-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+/* Month padding days (+Month+ view, outside the displayed month): muted, still editable.
+   A cell that has been colored green/red keeps its colour (those rules are more specific). */
+.off-month { background: var(--surface-2); }
+.cell.off-month:not(.color-green):not(.color-red) { color: var(--text-faint); }
+th.day-header.off-month { color: var(--text-faint); background: var(--surface-2); }
+th.ampm-label.off-month { color: var(--text-faint); }
+.booking-off.off-month { opacity: 0.5; }
+
+.view-group {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+}
+
+.view-btn { white-space: nowrap; }
+.view-btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+}
+
+.btn {
+    display: inline-block;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+}
+.btn:hover { background: var(--hover); }
+.btn-ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.btn-ghost:hover { background: var(--accent-bg); }
+.btn-danger { border-color: #e0aeab; color: #7a2e29; }
+.btn-danger:hover { background: var(--red-bg); }
+.btn-small { padding: 4px 10px; font-size: 12px; }
+
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    flex-wrap: nowrap;
+}
+
+.toolbar-label { font-size: 12px; color: var(--text-muted); font-weight: 600; white-space: nowrap; }
+.help-dot {
+    position: relative;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    color: var(--text-faint);
+    font-size: 12px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: help;
+    user-select: none;
+}
+.help-dot:hover { background: var(--hover); color: var(--text-muted); }
+.help-tip {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    width: max-content;
+    max-width: 420px;
+    background: #2b2f36;
+    color: #fff;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.55;
+    box-shadow: 0 4px 14px rgba(20, 20, 30, 0.18);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    z-index: 50;
+}
+/* Shows immediately (no delay) — unlike the native title tooltips on the other controls. */
+.help-dot:hover .help-tip,
+.help-dot:focus .help-tip { opacity: 1; visibility: visible; }
+.help-tip b { font-weight: 600; }
+.toolbar-hint {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-left: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    line-height: 1.35;
+}
+
+.color-btn {
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+.color-btn.color-green { background: var(--green-bg); border-color: var(--green-border); color: var(--green-text); }
+.color-btn.color-red { background: var(--red-bg); border-color: var(--red-border); color: var(--red-text); }
+.color-btn.color-clear { background: var(--surface); color: #555; }
+.color-btn:hover { filter: brightness(0.97); }
+
+.you-chip {
+    flex: 0 0 auto;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--header-bg);
+    color: var(--header-text);
+    padding: 5px 12px;
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 4px;
+}
+.you-chip:hover { background: #e9edf2; }
+.you-chip #youInitials { font-weight: 700; }
+
+.palette-wrap {
+    position: relative;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 6px;
+}
+.palette-disc {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    padding: 0;
+    cursor: pointer;
+    /* Left half = free colour, right half = occupied colour, from the active palette. */
+    background: linear-gradient(90deg, var(--swatch-free) 0 50%, var(--swatch-occ) 50% 100%);
+}
+.palette-disc:hover { filter: brightness(0.96); }
+
+.theme-disc {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    padding: 0;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.theme-disc::before { content: "\2600"; }            /* sun in light mode */
+html.theme-dark .theme-disc::before { content: "\263D"; } /* moon in dark mode */
+.theme-disc:hover { background: var(--hover); }
+.palette-toast {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #2b2f36;
+    color: #fff;
+    font-size: 11.5px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .15s;
+    pointer-events: none;
+    z-index: 60;
+}
+.palette-toast.show { opacity: 1; visibility: visible; }
+
+/* Colour-blind-friendly palette (per-user, toggled in the toolbar). Redefines the status
+   colour variables to an orange / bluish-green pair (Okabe-Ito based) that stays distinct
+   under red-green colour-vision deficiency, and recolours the faint M/F/T label tints. */
+body.palette-cb {
+    --green-bg: #bfe3ea;
+    --green-border: #8fccd2;
+    --green-text: #0d5152;
+    --red-bg: #f6cd85;
+    --red-border: #e6b357;
+    --red-text: #6b4600;
+    --swatch-free: #46b6b2;
+    --swatch-occ: #e9a63e;
+    --tint-m: #fbf1c8;
+    --tint-f: #dbe7fb;
+    --tint-t: #ebe0f8;
+}
+body.palette-cb .cell.color-green.selected { background-color: #aeddc8; }
+body.palette-cb .cell.color-red.selected { background-color: #eec680; }
+
+.grid-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+    box-shadow: 0 1px 2px rgba(20, 20, 30, 0.03);
+}
+
+table.grid {
+    border-collapse: collapse;
+    width: 100%;
+    table-layout: fixed;
+    user-select: none;
+}
+
+table.grid th, table.grid td {
+    border: 1px solid var(--border);
+}
+
+.col-office { width: 74px; }
+.col-name { width: 168px; }
+.col-hour { width: 34px; }
+
+/* Week view: let the hour columns flex so the whole week always fits the window
+   width (no horizontal scroll). table-layout:fixed distributes the space that's
+   left after the two fixed label columns evenly across the 40 hour columns, so
+   they shrink and grow with the window. Content is clipped rather than forcing
+   the table wider. */
+body.view-week .col-hour { width: auto; }
+
+/* Sticky left columns so labels stay visible on wide (month) views */
+.sticky-col {
+    position: sticky;
+    left: 0;
+    background: var(--surface);
+    z-index: 2;
+}
+.sticky-col-2 { left: 75px; z-index: 2; }
+thead .sticky-col { z-index: 3; background: var(--header-bg); }
+
+table.grid thead th {
+    background: var(--header-bg);
+    color: var(--header-text);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 4px;
+    text-align: center;
+}
+
+.day-header { border-left: 2px solid var(--border-strong); }
+table.grid thead th.day-header { font-weight: 700; }
+.day-header.today-col { background: var(--accent-bg); color: var(--accent); }
+.date-sub { font-weight: 700; color: inherit; font-size: 11px; }
+
+/* Thicker divider between rooms */
+tr.room-start > td,
+tr.room-start > th { border-top: 2px solid var(--divider-room); }
+
+/* Thicker divider between weeks (month view: left edge of each Monday) */
+.week-start { border-left: 3px solid var(--divider-week) !important; }
+
+/* Faint identity wash on the left label cells of bookable rooms.
+   Applied only to the Room + Desk/Table columns, never the schedule cells,
+   so it can't be confused with the green/red status coloring. */
+.col-office.tint-m, .col-name.tint-m { background: var(--tint-m); }
+.col-office.tint-f, .col-name.tint-f { background: var(--tint-f); }
+.col-office.tint-t, .col-name.tint-t { background: var(--tint-t); }
+
+.hour-label {
+    font-weight: 400;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    padding: 3px 0;
+}
+.hour-label.pm-start,
+table.grid td.pm-start { border-left: 2px solid var(--divider-ampm); }
+
+/* Day divider — thicker and darker than the AM/PM divider, drawn on every row
+   (header, desk lines, booking lines) at the start of each day in week/day view.
+   Uses `table.grid td` so it outranks the base 1px cell-border rule. */
+.day-header.day-start,
+.hour-label.day-start,
+table.grid td.day-start { border-left: 3px solid var(--divider-day); }
+
+/* In month view there are no hourly sub-columns: the day divider (between PM and the
+   next AM) is a medium line, Mondays keep the thick week line, and the within-day
+   AM/PM split is just the default thin border. */
+body.view-monthlike .day-header.day-start,
+body.view-monthlike .ampm-label.day-start,
+body.view-monthlike table.grid td.day-start { border-left: 2px solid var(--divider-ampm); }
+
+.col-office {
+    text-align: center;
+    font-weight: 600;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 13px;
+    white-space: nowrap;
+    padding: 0 6px;
+}
+
+/* Room identifier: type abbreviation to the left, number to the right. */
+.room-ident {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 4px;
+    width: 100%;
+}
+
+.type-abbr {
+    display: inline-block;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.room-num {
+    display: inline-block;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--header-text);
+    font-variant-numeric: tabular-nums;
+}
+
+.col-name {
+    padding: 2px 8px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.pictogram {
+    display: inline-flex;
+    vertical-align: middle;
+    color: #7c8794;
+    margin-right: 4px;
+}
+.pictogram svg { width: 20px; height: 20px; }
+
+.line-label {
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-block;
+    max-width: 122px;
+    white-space: nowrap;
+}
+
+.cell {
+    position: relative;
+    text-align: center;
+    vertical-align: middle;
+    font-size: 12.5px;
+    cursor: cell;
+    outline: none;
+    color: var(--text);
+    background: var(--surface);
+    height: 27px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.desk-cell { height: 31px; font-size: 13px; }
+
+.cell.color-green { background: var(--green-bg); color: var(--green-text); }
+.cell.color-red { background: var(--red-bg); color: var(--red-text); }
+
+.cell.selected {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    background-color: var(--accent-bg);
+}
+.cell.color-green.selected { background-color: #cbe6d2; }
+.cell.color-red.selected { background-color: #f0cfcd; }
+
+.cell.active-cell { box-shadow: inset 0 0 0 2px var(--accent); }
+
+.cell-editor {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    font-size: 12.5px;
+    text-align: center;
+    font-family: inherit;
+    background: var(--surface);
+    color: var(--text);
+}
+
+.empty-msg { text-align: center; padding: 30px; color: var(--text-faint); font-size: 13px; }
+
+.save-indicator {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    background: #2b2f36;
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity .15s, transform .15s;
+    pointer-events: none;
+}
+.save-indicator.show { opacity: 0.92; transform: translateY(0); }
+.save-indicator.error { background: #7a2e29; }
+
+/* Month view: no hourly slots — each day is just AM/PM, so the whole month fits.
+   Desk cells stay selectable/colorable; booking rows show a muted, inert stripe. */
+.col-ampm { width: 26px; }
+.ampm-label {
+    font-weight: 400;
+    font-size: 9.5px;
+    color: var(--text-faint);
+    padding: 3px 0;
+}
+.booking-off {
+    background: repeating-linear-gradient(
+        135deg,
+        var(--stripe-a),
+        var(--stripe-a) 5px,
+        var(--stripe-b) 5px,
+        var(--stripe-b) 10px
+    );
+    cursor: default;
+}
+body.view-monthlike .col-ampm { width: auto; }
+body.view-monthlike .ampm-label { font-size: 9px; overflow: hidden; }
+body.view-monthlike .cell { font-size: 10px; height: 26px; }
+body.view-monthlike .desk-cell { height: 30px; font-size: 10.5px; }
+body.view-monthlike .day-header { font-size: 11px; padding: 6px 2px; }
+body.view-monthlike .booking-off { height: 26px; }
+
+/* Month view: like the week, let the AM/PM columns flex so the whole month fits
+   the window with no horizontal scroll, stepping text down as they get narrow. */
+@media (max-width: 1200px) {
+    body.view-monthlike .cell { font-size: 9px; }
+    body.view-monthlike .desk-cell { font-size: 9px; }
+    body.view-monthlike .day-header { font-size: 10px; }
+    body.view-monthlike .ampm-label { font-size: 8px; }
+}
+@media (max-width: 1000px) {
+    body.view-monthlike .cell { font-size: 8px; }
+    body.view-monthlike .desk-cell { font-size: 8px; }
+    body.view-monthlike .day-header { font-size: 9px; }
+    body.view-monthlike .ampm-label { font-size: 7px; }
+}
+
+/* Day view: give more breathing room since there's only one day */
+body.view-day .col-hour { width: 56px; }
+
+/* Week view: as the flexible hour columns get narrow on smaller windows,
+   step the text down so the whole week stays legible without scrolling. */
+.hour-label { overflow: hidden; }
+@media (max-width: 1200px) {
+    body.view-week .hour-label { font-size: 9.5px; }
+    body.view-week .cell { font-size: 11px; }
+    body.view-week .desk-cell { font-size: 11.5px; }
+}
+@media (max-width: 1000px) {
+    body.view-week .hour-label { font-size: 8.5px; }
+    body.view-week .cell { font-size: 10px; }
+    body.view-week .desk-cell { font-size: 10px; }
+}
+@media (max-width: 860px) {
+    body.view-week .hour-label { font-size: 7.5px; }
+    body.view-week .cell { font-size: 9px; }
+    body.view-week .desk-cell { font-size: 9px; }
+}
+
+/* Admin page */
+.admin-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 720px;
+}
+.admin-office-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+}
+.admin-office-header {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
+.reorder-group {
+    display: inline-flex;
+    gap: 3px;
+}
+.visibility-card strong { display: block; margin-bottom: 10px; }
+.visibility-form {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+.visibility-form label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13.5px;
+    cursor: pointer;
+}
+.visibility-form input[type=checkbox] { cursor: pointer; }
+
+/* Auto-save fields (admin): full-width text inputs, subtle saved flash */
+.desk-name-input { width: 100%; }
+.admin-people-list li { padding: 3px 0; }
+.auto-field {
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    font-size: 13px;
+    transition: border-color .5s, box-shadow .5s;
+}
+.auto-field.just-saved {
+    border-color: var(--green-border);
+    box-shadow: 0 0 0 2px var(--green-bg);
+}
+label.just-saved { color: var(--green-text); }
+.room-number-form {
+    align-items: center;
+    gap: 6px;
+    flex: 0 0 auto;
+}
+.room-number-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+.room-number-form input[type=text] {
+    flex: 0 0 auto;
+    width: 110px;
+    font-weight: 600;
+}
+.reorder-btn {
+    padding: 3px 9px;
+    font-weight: 700;
+    line-height: 1;
+}
+.reorder-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.admin-type-tag {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--hover);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-right: auto;
+}
+.room-show {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.admin-people-list { list-style: none; padding: 0; margin: 0 0 10px 0; }
+.admin-people-list li { padding: 4px 0; }
+.admin-note { font-size: 12.5px; color: var(--text-faint); margin: 4px 0 0 0; }
+.inline-form { display: flex; gap: 8px; }
+.inline-form input[type=text], .inline-form input[type=number] {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    font-size: 13px;
+}
+.admin-capacity-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+}
+.admin-capacity-label input { width: 64px; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: 6px; }
+.add-office-card { display: flex; flex-direction: column; gap: 10px; justify-content: center; }
+.add-room-form { display: flex; flex-direction: column; gap: 8px; }
+.add-room-form input[type=text], .add-room-form select {
+    padding: 6px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+/* Login page */
+.login-wrap {
+    min-height: 70vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 26px;
+    width: 320px;
+    max-width: 90vw;
+    box-shadow: 0 2px 10px rgba(20, 20, 30, 0.05);
+    text-align: center;
+}
+.login-card h1 { font-size: 20px; margin: 0 0 4px 0; }
+.login-sub { font-size: 13px; color: var(--text-faint); margin: 0 0 18px 0; }
+.login-card input[type=password] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    font-size: 14px;
+    margin-bottom: 12px;
+}
+.login-btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    padding: 10px;
+    font-size: 14px;
+}
+.login-btn:hover { filter: brightness(1.05); background: var(--accent); }
+.login-error {
+    background: var(--red-bg);
+    color: var(--red-text);
+    border: 1px solid var(--red-border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    margin-bottom: 12px;
+}
+
+/* ---- Mobile / narrow screens ---- */
+.name-short { display: none; }
+.v-short { display: none; }
+@media (max-width: 700px) {
+    /* The long help text and keyboard "?" don't belong on a touch device. */
+    .toolbar-hint, .help-dot { display: none; }
+    .toolbar-label { display: none; }
+    .toolbar { flex-wrap: wrap; }
+    /* Short view-range labels: D / W / M / +M+ */
+    .v-full { display: none; }
+    .v-short { display: inline; }
+    /* First-name-only labels (with last initial where first names collide). */
+    .name-full { display: none; }
+    .name-short { display: inline; }
+
+    /* Control bar wraps instead of overflowing. */
+    .controlbar { grid-template-columns: 1fr auto; row-gap: 8px; }
+    .range-label { grid-column: 1 / -1; order: 3; }
+    .nav-group { order: 1; }
+    .view-group { order: 2; flex-wrap: wrap; }
+    body { padding: 10px; }
+
+    /* Compact grid so a full Day fits without sideways scrolling. Room numbers are up to
+       4 digits, so "D1010" fits in a slim column, leaving more width for the day. */
+    .col-office { width: 46px; padding: 0 3px; }
+    .col-name { width: 74px; }
+    .sticky-col-2 { left: 47px; }
+    body.view-day .col-hour { width: auto; } /* override the desktop 56px so it distributes */
+
+    /* Room id: no gap between type and number, left aligned (e.g. "D10101"). */
+    .room-ident { justify-content: flex-start; gap: 0; }
+    .type-abbr, .room-num { font-size: 12px; }
+
+    /* Smaller labels/pictograms/cells to fit the narrow columns. */
+    .col-name { padding: 2px 4px; }
+    .pictogram { margin-right: 2px; }
+    .pictogram svg { width: 15px; height: 15px; }
+    .line-label { max-width: 56px; }
+    .cell { font-size: 10.5px; }
+    .desk-cell { font-size: 11px; }
+    .hour-label { font-size: 9px; }
+}
+
+/* ---- Touch long-press multi-select ---- */
+@keyframes lpflash {
+    0%   { background-color: var(--accent); }
+    100% { background-color: var(--accent-bg); }
+}
+.cell.lp-flash { animation: lpflash .3s ease-out; }
+
+.select-bar {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: 0;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    background: #2b2f36;
+    box-shadow: 0 -2px 10px rgba(20, 20, 30, 0.18);
+}
+.select-bar[hidden] { display: none; }
+.select-count { color: #fff; font-size: 13px; font-weight: 600; margin-right: auto; }
+.sb-btn {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.sb-free { background: var(--green-bg); border-color: var(--green-border); color: var(--green-text); }
+.sb-occ  { background: var(--red-bg);   border-color: var(--red-border);   color: var(--red-text); }
+.sb-clear { background: #fff; color: #333; }
+.sb-cancel {
+    background: transparent;
+    border: 1px solid var(--text-muted);
+    color: #e6e8eb;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+/* ============================ DARK THEME ============================ */
+/* The effective theme is decided by a tiny <head> script (cookie override, else the OS
+   preference) which puts .theme-dark on <html> before paint, so there is no flash. */
+html.theme-dark {
+    --page-bg: #14171b;
+    --surface: #1e2229;
+    --surface-2: #262b33;
+    --hover: #2c323b;
+    --border: #333b45;
+    --border-strong: #47515d;
+    --header-bg: #262b33;
+    --header-text: #e7eaee;
+    --text: #e6e9ed;
+    --text-muted: #a6afba;
+    --text-faint: #79828d;
+    --accent: #5b8cff;
+    --accent-bg: rgba(91, 140, 255, 0.18);
+
+    /* Standard status colours — deep, muted fills with light text. */
+    --green-bg: #1f3d2e;
+    --green-border: #356b4c;
+    --green-text: #c4e8d2;
+    --red-bg: #47272a;
+    --red-border: #7c4348;
+    --red-text: #f1c6c6;
+    --swatch-free: #4fb082;
+    --swatch-occ: #d97b72;
+
+    /* Tints and stripes for dark. */
+    --tint-m: #1f3735;
+    --tint-f: #212a3a;
+    --tint-t: #2e2540;
+    --stripe-a: #23272e;
+    --stripe-b: #1b1f25;
+
+    --divider-room: #4d5763;
+    --divider-week: #6b7580;
+    --divider-day: #7c8894;
+    --divider-ampm: #556069;
+}
+
+/* Colour-blind palette in dark: orange / bluish-green, dark fills. */
+html.theme-dark body.palette-cb {
+    --green-bg: #123f43;
+    --green-border: #2c7076;
+    --green-text: #c0e9ec;
+    --red-bg: #4a3510;
+    --red-border: #7d5a1d;
+    --red-text: #f1d6a0;
+    --swatch-free: #3fb0b0;
+    --swatch-occ: #e0a94b;
+    --tint-m: #3a381c;
+    --tint-f: #212a3a;
+    --tint-t: #2b2340;
+}
+
+/* Selected-cell blends for dark (a touch lighter than the fill). */
+html.theme-dark .cell.color-green.selected { background-color: #2a5540; }
+html.theme-dark .cell.color-red.selected { background-color: #5e3639; }
+html.theme-dark body.palette-cb .cell.color-green.selected { background-color: #1f5a50; }
+html.theme-dark body.palette-cb .cell.color-red.selected { background-color: #654918; }
+
+/* A few surfaces that are dark in both themes look fine as-is (save/select/help toasts).
+   Inputs and selects need explicit dark surfaces. */
+html.theme-dark input[type="text"],
+html.theme-dark input[type="number"],
+html.theme-dark input[type="password"],
+html.theme-dark select {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border-strong);
+}
+html.theme-dark .today-btn.is-current,
+html.theme-dark .view-btn.active { color: #fff; }
+
+/* ---- Admin-gate modal ---- */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(20, 20, 30, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    padding: 20px;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-box {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px;
+    max-width: 430px;
+    width: 100%;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+}
+.modal-msg { font-size: 15px; margin: 0 0 18px 0; line-height: 1.45; font-weight: 600; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-primary:hover { filter: brightness(1.05); background: var(--accent); }

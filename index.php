@@ -1,0 +1,482 @@
+<?php
+require __DIR__ . '/config.php';
+require __DIR__ . '/assets/icons.php';
+require_auth_page($pdo);
+
+function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
+
+// Phones are best opened in Day view; wider devices default to Week. Only applies when the
+// URL doesn't already specify a view (so an explicit choice is always respected).
+function is_mobile_ua(): bool
+{
+    $ua = $_SERVER['HTTP_USER_AGENT'] ?? '';
+    return (bool)preg_match('/Mobile|Android|iPhone|iPod|Windows Phone|BlackBerry|Opera Mini/i', $ua);
+}
+
+$view = $_GET['view'] ?? (is_mobile_ua() ? 'day' : 'week');
+if (!in_array($view, ['day', 'week', 'month', 'monthx'], true)) {
+    $view = 'week';
+}
+$refParam = $_GET['ref'] ?? date('Y-m-d');
+try {
+    $ref = new DateTime($refParam);
+} catch (Exception $e) {
+    $ref = new DateTime('today');
+}
+$todayStr = (new DateTime('today'))->format('Y-m-d');
+
+function start_of_week(DateTime $d): DateTime
+{
+    $dow = (int)$d->format('N'); // 1 = Monday
+    $m = clone $d;
+    $m->modify('-' . ($dow - 1) . ' days');
+    return $m;
+}
+
+// Step one or more days in a direction, skipping weekends (used for day-view nav).
+function step_weekday(DateTime $d, int $dir): DateTime
+{
+    $x = clone $d;
+    do {
+        $x->modify(($dir > 0 ? '+' : '-') . '1 day');
+    } while ((int)$x->format('N') > 5);
+    return $x;
+}
+
+// "month" is the plain month; "monthx" (the +Month+ view) is the same but padded out to
+// whole Mon–Fri weeks. Both use the compact AM/PM layout.
+$isMonth = ($view === 'month' || $view === 'monthx');
+$extended = ($view === 'monthx');
+$monthKey = $isMonth ? $ref->format('Y-m') : '';
+
+// A weekend day shown in Day view (only reachable via "Today" or a direct link): all its
+// cells are blocked out, matching the disabled look used in month view.
+$dayBlocked = ($view === 'day' && (int)$ref->format('N') > 5);
+
+$days = [];
+if ($view === 'day') {
+    $days[] = clone $ref;
+    $prevRef = step_weekday($ref, -1)->format('Y-m-d'); // skip weekends
+    $nextRef = step_weekday($ref, +1)->format('Y-m-d');
+    $rangeLabel = $ref->format('l j F Y') . ' (W' . (int)$ref->format('W') . ')';
+} elseif ($isMonth) {
+    $first = new DateTime($ref->format('Y-m-01'));
+    $last = new DateTime($ref->format('Y-m-t'));
+    $cursor = clone $first;
+    while ($cursor <= $last) {
+        if ((int)$cursor->format('N') <= 5) {
+            $days[] = clone $cursor;
+        }
+        $cursor->modify('+1 day');
+    }
+    // "Extend to full weeks": pad with the weekdays needed to complete the first and
+    // last weeks (Mon–Fri). Those padding days belong to the neighbouring months.
+    if ($extended && !empty($days)) {
+        $dowFirst = (int)$days[0]->format('N');
+        $prefix = [];
+        for ($k = $dowFirst - 1; $k >= 1; $k--) {
+            $d = clone $days[0];
+            $d->modify("-$k days");
+            $prefix[] = $d;
+        }
+        $lastDay = $days[count($days) - 1];
+        $dowLast = (int)$lastDay->format('N');
+        $suffix = [];
+        for ($k = 1; $k <= 5 - $dowLast; $k++) {
+            $d = clone $lastDay;
+            $d->modify("+$k days");
+            $suffix[] = $d;
+        }
+        $days = array_merge($prefix, $days, $suffix);
+    }
+    $prevRef = (clone $first)->modify('-1 month')->format('Y-m-d');
+    $nextRef = (clone $first)->modify('+1 month')->format('Y-m-d');
+    $w1 = (int)$days[0]->format('W');
+    $w2 = (int)$days[count($days) - 1]->format('W');
+    $rangeLabel = $first->format('F Y') . ' (W' . $w1 . ($w1 === $w2 ? '' : '-' . $w2) . ')';
+} else { // week
+    $monday = start_of_week($ref);
+    for ($i = 0; $i < 5; $i++) {
+        $d = clone $monday;
+        $d->modify("+$i days");
+        $days[] = $d;
+    }
+    $prevRef = (clone $monday)->modify('-7 days')->format('Y-m-d');
+    $nextRef = (clone $monday)->modify('+7 days')->format('Y-m-d');
+    $rangeLabel = $days[0]->format('j M') . ' – ' . $days[count($days) - 1]->format('j M Y')
+        . ' (W' . (int)$days[0]->format('W') . ')';
+}
+
+// True for days shown in month view that fall outside the displayed month (padding days).
+$offMonth = function (DateTime $d) use ($monthKey) {
+    return $monthKey !== '' && $d->format('Y-m') !== $monthKey;
+};
+
+$rangeStart = $days[0]->format('Y-m-d');
+$rangeEnd = $days[count($days) - 1]->format('Y-m-d');
+$isCurrentRange = ($todayStr >= $rangeStart && $todayStr <= $rangeEnd);
+
+// In month views we drop the hourly booking columns entirely, so each day is just
+// two columns (AM / PM). This lets the whole month fit on one screen.
+$hourly = !$isMonth;
+$colsPerDay = $hourly ? 8 : 2;
+$deskColspan = $hourly ? 4 : 1;
+
+// --- Data ---
+
+$rooms = $pdo->query("SELECT * FROM rooms ORDER BY sort_order, room_number")->fetchAll(PDO::FETCH_ASSOC);
+
+// Room-type visibility and per-room visibility (toggled in the admin page).
+$typeVisible = [
+    'DO' => get_flag($pdo, 'show_DO', 1) === 1,
+    'SO' => get_flag($pdo, 'show_SO', 1) === 1,
+    'M'  => get_flag($pdo, 'show_M', 1) === 1,
+    'F'  => get_flag($pdo, 'show_F', 1) === 1,
+    'T'  => get_flag($pdo, 'show_T', 1) === 1,
+];
+$rooms = array_values(array_filter($rooms, function ($r) use ($typeVisible) {
+    return ($typeVisible[$r['room_type']] ?? true) && ((int)($r['visible'] ?? 1) === 1);
+}));
+
+// Whether single-occupancy offices show their shared meeting-table booking line.
+$showSOtable = get_flag($pdo, 'show_SO_table', 1) === 1;
+
+$desks = $pdo->query("SELECT * FROM desks ORDER BY room_id, seat_index")->fetchAll(PDO::FETCH_ASSOC);
+$desksByRoom = [];
+foreach ($desks as $d) {
+    $desksByRoom[$d['room_id']][] = $d;
+}
+
+// Short display names for narrow/mobile screens: just the first name, but if two people
+// share a first name, add the last-name initial ("Anna V." / "Anna K.").
+function first_char(string $s): string
+{
+    if ($s === '') return '';
+    if (function_exists('mb_substr')) return mb_substr($s, 0, 1, 'UTF-8');
+    return preg_match('/./u', $s, $m) ? $m[0] : $s[0];
+}
+$firstCount = [];
+foreach ($desks as $d) {
+    $nm = trim($d['name']);
+    if ($nm === '') continue;
+    $parts = preg_split('/\s+/', $nm);
+    $firstCount[mb_strtolower_safe($parts[0])] = ($firstCount[mb_strtolower_safe($parts[0])] ?? 0) + 1;
+}
+function mb_strtolower_safe(string $s): string
+{
+    return function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
+}
+function mb_strtoupper_safe(string $s): string
+{
+    return function_exists('mb_strtoupper') ? mb_strtoupper($s, 'UTF-8') : strtoupper($s);
+}
+$deskShort = [];
+foreach ($desks as $d) {
+    $nm = trim($d['name']);
+    if ($nm === '') { continue; }
+    $parts = preg_split('/\s+/', $nm);
+    $first = $parts[0];
+    if (count($parts) > 1 && ($firstCount[mb_strtolower_safe($first)] ?? 0) > 1) {
+        $deskShort[$d['id']] = $first . ' ' . mb_strtoupper_safe(first_char(end($parts))) . '.';
+    } else {
+        $deskShort[$d['id']] = $first;
+    }
+}
+
+// Emits a desk's name as a full label (desktop) plus a short label (mobile).
+function desk_name_label($desk, $deskShort)
+{
+    $full = $desk['name'] !== '' ? $desk['name'] : '(unassigned)';
+    $short = $desk['name'] !== '' ? ($deskShort[$desk['id']] ?? $full) : '—';
+    return '<span class="name-full">' . h($full) . '</span>'
+        . '<span class="name-short">' . h($short) . '</span>';
+}
+
+$statusStmt = $pdo->prepare("SELECT * FROM desk_status WHERE date BETWEEN ? AND ?");
+$statusStmt->execute([$rangeStart, $rangeEnd]);
+$statusMap = [];
+foreach ($statusStmt->fetchAll(PDO::FETCH_ASSOC) as $s) {
+    $statusMap[$s['desk_id']][$s['date']][$s['period']] = ['text' => $s['text'], 'color' => $s['color']];
+}
+
+$bookingStmt = $pdo->prepare("SELECT * FROM room_bookings WHERE date BETWEEN ? AND ?");
+$bookingStmt->execute([$rangeStart, $rangeEnd]);
+$bookingMap = [];
+foreach ($bookingStmt->fetchAll(PDO::FETCH_ASSOC) as $b) {
+    $bookingMap[$b['room_id']][$b['date']][(int)$b['hour']] = $b['text'];
+}
+
+$typeLabel = ['DO' => 'DO', 'SO' => 'SO', 'M' => 'M', 'F' => 'F', 'T' => 'T'];
+
+// Room identifier shown in the "Room" column: type abbreviation + the room number.
+// The stored type codes stay DO/SO/M/F/T; only the display is shortened (DO->D, SO->S).
+function room_ident(array $room): string
+{
+    static $disp = ['DO' => 'D', 'SO' => 'S', 'M' => 'M', 'F' => 'F', 'T' => 'T'];
+    $type = $disp[$room['room_type']] ?? $room['room_type'];
+    $num = trim((string)$room['room_number']);
+    return '<span class="room-ident">'
+        . '<span class="type-abbr">' . h($type) . '</span>'
+        . '<span class="room-num">' . ($num !== '' ? h($num) : '') . '</span>'
+        . '</span>';
+}
+
+function render_desk_cell($desk, $dateStr, $period, $statusMap, $colspan = 4, $extra = '')
+{
+    $cell = $statusMap[$desk['id']][$dateStr][$period] ?? ['text' => '', 'color' => 'none'];
+    $colorClass = 'color-' . h($cell['color']);
+    $extra = $extra !== '' ? ' ' . $extra : '';
+    echo '<td colspan="' . (int)$colspan . '" class="cell desk-cell ' . $colorClass . $extra . '"'
+        . ' data-kind="desk" data-row-key="desk-' . (int)$desk['id'] . '"'
+        . ' data-desk="' . (int)$desk['id'] . '" data-date="' . h($dateStr) . '" data-period="' . h($period) . '"'
+        . ' tabindex="0">' . h($cell['text']) . '</td>';
+}
+
+function render_booking_cells($days, $roomId, $bookingMap)
+{
+    foreach ($days as $d) {
+        $dateStr = $d->format('Y-m-d');
+        foreach (BOOKING_HOURS as $hour) {
+            $text = $bookingMap[$roomId][$dateStr][$hour] ?? '';
+            $colorClass = $text !== '' ? 'color-red' : '';
+            $edgeClass = '';
+            if ($hour === 9) { $edgeClass = ' day-start'; }
+            elseif ($hour === 13) { $edgeClass = ' pm-start'; }
+            echo '<td class="cell hour-cell ' . $colorClass . $edgeClass . '"'
+                . ' data-kind="booking" data-row-key="book-' . (int)$roomId . '"'
+                . ' data-room="' . (int)$roomId . '" data-date="' . h($dateStr) . '" data-hour="' . (int)$hour . '"'
+                . ' tabindex="0">' . h($text) . '</td>';
+        }
+    }
+}
+
+// Month view: booking rows show a single muted, non-selectable cell per day.
+// Mondays get a "week-start" class so a thicker divider marks each week boundary.
+function render_booking_disabled($days, $colsPerDay, $offMonth)
+{
+    foreach ($days as $d) {
+        $ws = ((int)$d->format('N') === 1) ? ' week-start' : ' day-start';
+        if ($offMonth($d)) $ws .= ' off-month';
+        echo '<td colspan="' . (int)$colsPerDay . '" class="booking-off' . $ws . '" aria-hidden="true"></td>';
+    }
+}
+
+// Day view on a weekend: the whole day's schedule is blocked out (one inert striped cell).
+function render_blocked_day($colsPerDay)
+{
+    echo '<td colspan="' . (int)$colsPerDay . '" class="booking-off" aria-hidden="true"></td>';
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Office Presence Tracker</title>
+<script src="<?= asset_url('assets/theme.js') ?>"></script>
+<link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
+</head>
+<body class="view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?>">
+
+<div class="topbar">
+    <h1>Office Presence</h1>
+    <a class="btn btn-ghost" id="adminLink" href="admin.php">Manage rooms &amp; desks</a>
+</div>
+
+<div class="controlbar">
+    <div class="nav-group">
+        <a class="btn nav-btn" href="?view=<?= h($view) ?>&ref=<?= h($prevRef) ?>" title="Previous — ⌘/Ctrl+←">&larr;</a>
+        <a class="btn nav-btn today-btn <?= $isCurrentRange ? 'is-current' : '' ?>" href="?view=<?= h($view) ?>&ref=<?= h($todayStr) ?>" title="Jump to today — ⌘/Ctrl+. or Home">Today</a>
+        <a class="btn nav-btn" href="?view=<?= h($view) ?>&ref=<?= h($nextRef) ?>" title="Next — ⌘/Ctrl+→">&rarr;</a>
+    </div>
+    <div class="range-label"><span><?= h($rangeLabel) ?></span></div>
+    <div class="view-group">
+        <a class="btn view-btn <?= $view === 'day' ? 'active' : '' ?>" href="?view=day&ref=<?= h($ref->format('Y-m-d')) ?>" title="Day — ⌘/Ctrl+1"><span class="v-full">Day</span><span class="v-short">D</span></a>
+        <a class="btn view-btn <?= $view === 'week' ? 'active' : '' ?>" href="?view=week&ref=<?= h($ref->format('Y-m-d')) ?>" title="Week — ⌘/Ctrl+2"><span class="v-full">Week</span><span class="v-short">W</span></a>
+        <a class="btn view-btn <?= $view === 'month' ? 'active' : '' ?>" href="?view=month&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month — ⌘/Ctrl+3"><span class="v-full">Month</span><span class="v-short">M</span></a>
+        <a class="btn view-btn <?= $view === 'monthx' ? 'active' : '' ?>" href="?view=monthx&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month padded out to full Mon–Fri weeks — ⌘/Ctrl+4"><span class="v-full">+Month+</span><span class="v-short">+M+</span></a>
+    </div>
+</div>
+
+<div class="toolbar">
+    <span class="toolbar-label">Desks:</span>
+    <button type="button" class="color-btn color-green" data-color="green" title="Mark selected desks free — ⌘/Ctrl+F">Free</button>
+    <button type="button" class="color-btn color-red" data-color="red" title="Mark selected desks occupied — ⌘/Ctrl+O">Occ</button>
+    <button type="button" class="color-btn color-clear" data-color="none" title="Clear colour — ⌘/Ctrl+C">Clear</button>
+    <button type="button" class="you-chip" id="youChip" title="Your initials for one-tap room booking — click to change">You: <span id="youInitials">—</span></button>
+    <span class="palette-wrap">
+        <button type="button" class="palette-disc" id="paletteBtn" title="Switch colour palette" aria-label="Switch colour palette"></button>
+        <span class="palette-toast" id="paletteToast" role="status"></span>
+    </span>
+    <span class="palette-wrap">
+        <button type="button" class="theme-disc" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark theme"></button>
+        <span class="palette-toast" id="themeToast" role="status"></span>
+    </span>
+    <span class="toolbar-hint" id="toolbarHint">Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.</span>
+    <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b>Shortcuts &amp; tips</b><br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>Type into a multi-cell selection, then Enter — fills them all<br>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+← / → — previous / next<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+↑ / ↓ — scroll the page<br>Double-click a booking slot to edit it (e.g. to change someone else's)<br>The two-colour disc switches to a colour-blind-friendly palette</span></span>
+</div>
+
+<div class="grid-wrap">
+<table class="grid">
+    <colgroup>
+        <col class="col-office">
+        <col class="col-name">
+        <?php foreach ($days as $d): for ($i = 0; $i < $colsPerDay; $i++): ?>
+            <col class="<?= $hourly ? 'col-hour' : 'col-ampm' ?>">
+        <?php endfor; endforeach; ?>
+    </colgroup>
+    <thead>
+    <tr>
+        <th class="col-office sticky-col" rowspan="2">Room</th>
+        <th class="col-name sticky-col sticky-col-2" rowspan="2">Desk / Table</th>
+        <?php foreach ($days as $d):
+            $edge = $hourly ? ' day-start' : ((int)$d->format('N') === 1 ? ' week-start' : ' day-start');
+            if ($offMonth($d)) $edge .= ' off-month';
+        ?>
+            <th colspan="<?= $colsPerDay ?>" class="day-header<?= $edge ?> <?= $d->format('Y-m-d') === $todayStr ? 'today-col' : '' ?>">
+                <?= h($d->format('D')) ?> <span class="date-sub"><?= h($d->format('j M')) ?></span>
+            </th>
+        <?php endforeach; ?>
+    </tr>
+    <tr>
+        <?php if ($hourly): ?>
+            <?php foreach ($days as $d): foreach (BOOKING_HOURS as $hour):
+                $edge = $hour === 9 ? ' day-start' : ($hour === 13 ? ' pm-start' : '');
+            ?>
+                <th class="hour-label<?= $edge ?>"><?= $hour ?></th>
+            <?php endforeach; endforeach; ?>
+        <?php else: ?>
+            <?php foreach ($days as $d):
+                $amEdge = ((int)$d->format('N') === 1) ? ' week-start' : ' day-start';
+                $om = $offMonth($d) ? ' off-month' : '';
+            ?>
+                <th class="ampm-label<?= $amEdge . $om ?>">AM</th>
+                <th class="ampm-label<?= $om ?>">PM</th>
+            <?php endforeach; ?>
+        <?php endif; ?>
+    </tr>
+    </thead>
+    <tbody>
+    <?php
+    // Faint identity tint applied to the two left label cells of bookable rooms.
+    $tintClass = ['M' => 'tint-m', 'F' => 'tint-f', 'T' => 'tint-t'];
+    foreach ($rooms as $room):
+        $roomId = $room['id'];
+        $type = $room['room_type'];
+        $tint = $tintClass[$type] ?? '';
+        // Vertical dividers. Week/day view: thick day line before AM (start of day),
+        // medium line between AM/PM. Month view: thick week line on Mondays, medium day
+        // line before AM (between days), and a thin default line between AM and PM.
+        // Padding days (outside the displayed month) also get an "off-month" mute class.
+        $amExtra = function ($d) use ($hourly, $offMonth) {
+            $c = $hourly ? 'day-start' : ((int)$d->format('N') === 1 ? 'week-start' : 'day-start');
+            if ($offMonth($d)) $c .= ' off-month';
+            return $c;
+        };
+        $pmExtra = function ($d) use ($hourly, $offMonth) {
+            $c = $hourly ? 'pm-start' : '';
+            if ($offMonth($d)) $c = trim($c . ' off-month');
+            return $c;
+        };
+    ?>
+        <?php if ($type === 'DO'):
+            $roomDesks = $desksByRoom[$roomId] ?? [];
+            $seats = [0 => null, 1 => null];
+            foreach ($roomDesks as $d) { $seats[(int)$d['seat_index']] = $d; }
+            $firstRow = true;
+        ?>
+            <?php foreach ([0, 1] as $seatIdx): $desk = $seats[$seatIdx]; if (!$desk) continue; ?>
+                <tr class="<?= $firstRow ? 'room-start' : '' ?>">
+                    <?php if ($seatIdx === 0): ?>
+                        <td class="col-office sticky-col <?= $tint ?>" rowspan="2"><?= room_ident($room) ?></td>
+                    <?php endif; ?>
+                    <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
+                        <span class="pictogram"><?= icon_for_room_line('desk') ?></span>
+                        <span class="line-label"><?= desk_name_label($desk, $deskShort) ?></span>
+                    </td>
+                    <?php if ($dayBlocked): render_blocked_day($colsPerDay); else: foreach ($days as $d):
+                        $dateStr = $d->format('Y-m-d');
+                        render_desk_cell($desk, $dateStr, 'am', $statusMap, $deskColspan, $amExtra($d));
+                        render_desk_cell($desk, $dateStr, 'pm', $statusMap, $deskColspan, $pmExtra($d));
+                    endforeach; endif; ?>
+                </tr>
+                <?php $firstRow = false; ?>
+            <?php endforeach; ?>
+
+        <?php elseif ($type === 'SO'):
+            $roomDesks = $desksByRoom[$roomId] ?? [];
+            $desk = $roomDesks[0] ?? null;
+        ?>
+            <tr class="room-start">
+                <td class="col-office sticky-col <?= $tint ?>" rowspan="<?= $showSOtable ? 2 : 1 ?>"><?= room_ident($room) ?></td>
+                <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
+                    <span class="pictogram"><?= icon_for_room_line('desk') ?></span>
+                    <span class="line-label"><?= $desk ? desk_name_label($desk, $deskShort) : '—' ?></span>
+                </td>
+                <?php if ($dayBlocked): render_blocked_day($colsPerDay); elseif ($desk): foreach ($days as $d):
+                    $dateStr = $d->format('Y-m-d');
+                    render_desk_cell($desk, $dateStr, 'am', $statusMap, $deskColspan, $amExtra($d));
+                    render_desk_cell($desk, $dateStr, 'pm', $statusMap, $deskColspan, $pmExtra($d));
+                endforeach; endif; ?>
+            </tr>
+            <?php if ($showSOtable): ?>
+            <tr>
+                <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
+                    <span class="pictogram"><?= icon_for_room_line('table') ?></span>
+                </td>
+                <?php if ($dayBlocked) { render_blocked_day($colsPerDay); } elseif ($hourly) { render_booking_cells($days, $roomId, $bookingMap); } else { render_booking_disabled($days, $colsPerDay, $offMonth); } ?>
+            </tr>
+            <?php endif; ?>
+
+        <?php else: // M, F, T ?>
+            <tr class="room-start">
+                <td class="col-office sticky-col <?= $tint ?>"><?= room_ident($room) ?></td>
+                <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
+                    <span class="pictogram"><?= icon_for_room_line('room', $type) ?></span>
+                </td>
+                <?php if ($dayBlocked) { render_blocked_day($colsPerDay); } elseif ($hourly) { render_booking_cells($days, $roomId, $bookingMap); } else { render_booking_disabled($days, $colsPerDay, $offMonth); } ?>
+            </tr>
+        <?php endif; ?>
+    <?php endforeach; ?>
+    <?php if (empty($rooms)): ?>
+        <tr><td colspan="<?= 2 + count($days) * $colsPerDay ?>" class="empty-msg">No rooms yet. Go to "Manage rooms &amp; desks" to add some.</td></tr>
+    <?php endif; ?>
+    </tbody>
+</table>
+</div>
+
+<div class="save-indicator" id="saveIndicator"></div>
+
+<div class="modal-overlay" id="adminGate" hidden>
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="adminGateTitle">
+        <p class="modal-msg" id="adminGateTitle">Only the administrator should access this page.</p>
+        <div class="modal-actions">
+            <button type="button" class="btn" id="adminGateCancel">Cancel</button>
+            <button type="button" class="btn btn-primary" id="adminGateGo">Go to the page, I am the administrator</button>
+        </div>
+    </div>
+</div>
+
+<div class="select-bar" id="selectBar" hidden>
+    <span class="select-count" id="selectCount">0 selected</span>
+    <button type="button" class="sb-btn sb-free" data-color="green">Free</button>
+    <button type="button" class="sb-btn sb-occ" data-color="red">Occ</button>
+    <button type="button" class="sb-btn sb-clear" data-color="none">Clear</button>
+    <button type="button" class="sb-cancel" id="selectCancel">Cancel</button>
+</div>
+
+<script>
+window.TRACKER = {
+    view: <?= json_encode($view) ?>,
+    ref: <?= json_encode($ref->format('Y-m-d')) ?>,
+    prevRef: <?= json_encode($prevRef) ?>,
+    nextRef: <?= json_encode($nextRef) ?>,
+    todayRef: <?= json_encode($todayStr) ?>,
+    rangeStart: <?= json_encode($rangeStart) ?>,
+    rangeEnd: <?= json_encode($rangeEnd) ?>,
+    revision: <?= (int)get_revision($pdo) ?>
+};
+</script>
+<script src="<?= asset_url('assets/app.js') ?>"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Prevent the SQLite database from being downloaded over the web.
+# (Apache 2.4+). On nginx, add an equivalent `location ~ /data/ { deny all; }` block.
+Require all denied
