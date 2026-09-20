@@ -276,11 +276,21 @@ function render_blocked_day($colsPerDay)
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
 <link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
 </head>
-<body class="view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?>">
+<body class="view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?><?= (($_COOKIE['op_hide_do'] ?? '') === '1') ? ' hide-do' : '' ?>">
 
 <div class="topbar">
     <h1>Office Presence</h1>
-    <a class="btn btn-ghost" id="adminLink" href="admin.php">Manage rooms &amp; desks</a>
+    <div class="topbar-right">
+        <span class="palette-wrap">
+            <button type="button" class="palette-disc" id="paletteBtn" title="Switch colour palette" aria-label="Switch colour palette"></button>
+            <span class="palette-toast" id="paletteToast" role="status"></span>
+        </span>
+        <span class="palette-wrap">
+            <button type="button" class="theme-disc" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark theme"></button>
+            <span class="palette-toast" id="themeToast" role="status"></span>
+        </span>
+        <a class="btn btn-ghost" id="adminLink" href="admin.php">Setup rooms</a>
+    </div>
 </div>
 
 <div class="controlbar">
@@ -303,14 +313,10 @@ function render_blocked_day($colsPerDay)
     <button type="button" class="color-btn color-green" data-color="green" title="Mark selected desks free — ⌘/Ctrl+F">Free</button>
     <button type="button" class="color-btn color-red" data-color="red" title="Mark selected desks occupied — ⌘/Ctrl+O">Occ</button>
     <button type="button" class="color-btn color-clear" data-color="none" title="Clear colour — ⌘/Ctrl+C">Clear</button>
-    <button type="button" class="you-chip" id="youChip" title="Your initials for one-tap room booking — click to change">You: <span id="youInitials">—</span></button>
+    <button type="button" class="you-chip" id="youChip" title="Your initials for one-tap room booking — click to change"><span class="you-label">You: </span><span id="youInitials">—</span></button>
     <span class="palette-wrap">
-        <button type="button" class="palette-disc" id="paletteBtn" title="Switch colour palette" aria-label="Switch colour palette"></button>
-        <span class="palette-toast" id="paletteToast" role="status"></span>
-    </span>
-    <span class="palette-wrap">
-        <button type="button" class="theme-disc" id="themeBtn" title="Switch light / dark" aria-label="Switch light or dark theme"></button>
-        <span class="palette-toast" id="themeToast" role="status"></span>
+        <button type="button" class="do-disc" id="doToggle" title="Show or hide the double offices — for a compact room overview (pinch vertically on mobile)" aria-label="Show or hide double offices">D</button>
+        <span class="palette-toast" id="doToast" role="status"></span>
     </span>
     <span class="toolbar-hint" id="toolbarHint">Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.</span>
     <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b>Shortcuts &amp; tips</b><br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>Type into a multi-cell selection, then Enter — fills them all<br>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+← / → — previous / next<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+↑ / ↓ — scroll the page<br>Double-click a booking slot to edit it (e.g. to change someone else's)<br>The two-colour disc switches to a colour-blind-friendly palette</span></span>
@@ -386,7 +392,7 @@ function render_blocked_day($colsPerDay)
             $firstRow = true;
         ?>
             <?php foreach ([0, 1] as $seatIdx): $desk = $seats[$seatIdx]; if (!$desk) continue; ?>
-                <tr class="<?= $firstRow ? 'room-start' : '' ?>">
+                <tr class="room-do <?= $firstRow ? 'room-start' : '' ?>">
                     <?php if ($seatIdx === 0): ?>
                         <td class="col-office sticky-col <?= $tint ?>" rowspan="2"><?= room_ident($room) ?></td>
                     <?php endif; ?>
@@ -439,7 +445,7 @@ function render_blocked_day($colsPerDay)
         <?php endif; ?>
     <?php endforeach; ?>
     <?php if (empty($rooms)): ?>
-        <tr><td colspan="<?= 2 + count($days) * $colsPerDay ?>" class="empty-msg">No rooms yet. Go to "Manage rooms &amp; desks" to add some.</td></tr>
+        <tr><td colspan="<?= 2 + count($days) * $colsPerDay ?>" class="empty-msg">No rooms yet. Go to "Setup rooms" to add some.</td></tr>
     <?php endif; ?>
     </tbody>
 </table>

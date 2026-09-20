@@ -173,6 +173,9 @@ schema_mysql.sql               Reference schema for MySQL setups
 - Weeks are Monday–Friday. Month view shows all weekdays of the month.
 - Colors are intentionally muted (soft green/red); tweak the `--green-*` / `--red-*` variables in
   `assets/style.css` to change them.
+- **Double offices toggle:** the "Double offices" checkbox in the toolbar collapses/expands the
+  double-occupancy office rows, for a compact "find a room" overview. It's per-user (saved in a
+  cookie). On a touch device you can also pinch vertically — pinch in to hide, spread to show.
 - **Dark mode:** follows the device's OS light/dark setting automatically, and the sun/moon disc in
   the toolbar overrides it per device (saved in a cookie). Works with both colour palettes.
 - **Colour-blind-friendly palette:** the small two-colour disc in the toolbar switches, per device,

@@ -57,8 +57,14 @@ h1 {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 20px;
+    gap: 16px;
     margin-bottom: 14px;
+    flex-wrap: wrap;
+}
+.topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
 }
 
 /* --- Control bar: fixed-width left group so nav buttons never shift; the view group
@@ -758,7 +764,11 @@ label.just-saved { color: var(--green-text); }
     /* The long help text and keyboard "?" don't belong on a touch device. */
     .toolbar-hint, .help-dot { display: none; }
     .toolbar-label { display: none; }
-    .toolbar { flex-wrap: wrap; }
+    .toolbar { flex-wrap: wrap; gap: 10px; }
+    /* Bigger disc tap targets on touch: top-row discs, and the D disc sized to the toolbar pills. */
+    .palette-disc, .theme-disc { width: 28px; height: 28px; font-size: 14px; }
+    .do-disc { width: 34px; height: 34px; font-size: 17px; }
+    .topbar-right { gap: 14px; }
     /* Short view-range labels: D / W / M / +M+ */
     .v-full { display: none; }
     .v-short { display: inline; }
@@ -938,3 +948,34 @@ html.theme-dark .view-btn.active { color: #fff; }
 .modal-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn-primary:hover { filter: brightness(1.05); background: var(--accent); }
+
+/* ---- Double-offices toggle (per-user compact overview) ---- */
+body.hide-do tr.room-do { display: none; }
+.do-disc {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1px solid var(--border-strong);
+    padding: 0;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.do-disc:hover { background: var(--hover); }
+/* When double offices are hidden, show the disc as "off": a strike through the D. */
+body.hide-do .do-disc { color: var(--text-faint); }
+body.hide-do .do-disc::after {
+    content: "";
+    position: absolute;
+    left: 3px; right: 3px; top: 50%;
+    height: 2px;
+    background: var(--text-faint);
+    transform: rotate(-20deg);
+}

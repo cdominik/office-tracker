@@ -121,13 +121,13 @@ $typeNames = [
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manage Rooms &amp; Desks</title>
+<title>Setup rooms</title>
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
 <link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
 </head>
 <body>
 <div class="topbar">
-    <h1>Manage rooms &amp; desks</h1>
+    <h1>Setup rooms</h1>
     <a class="btn" href="index.php">&larr; Back to tracker</a>
 </div>
 

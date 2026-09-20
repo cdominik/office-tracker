@@ -298,6 +298,55 @@
         });
     }
 
+    // Double-offices toggle: collapse the DO rooms for a compact "find a room" overview.
+    // Per-user (cookie); the body class is already set server-side so there's no flash.
+    const doToggle = document.getElementById('doToggle');
+    const doToast = document.getElementById('doToast');
+    let doToastTimer = null;
+    function applyHideDo(hide, save) {
+        document.body.classList.toggle('hide-do', hide);
+        if (doToggle) doToggle.setAttribute('aria-pressed', String(!hide));
+        if (save) setCookie('op_hide_do', hide ? '1' : '', 365);
+        if (save && doToast) {
+            doToast.textContent = hide ? 'Double offices hidden' : 'Double offices shown';
+            doToast.classList.add('show');
+            clearTimeout(doToastTimer);
+            doToastTimer = setTimeout(() => doToast.classList.remove('show'), 1500);
+        }
+    }
+    if (doToggle) {
+        doToggle.addEventListener('click', () => applyHideDo(!document.body.classList.contains('hide-do'), true));
+    }
+
+    // Mobile: a vertical two-finger pinch toggles the double offices. Pinch in (fingers move
+    // together) hides them; spread apart shows them. Only claims clearly-vertical pinches, so
+    // ordinary (diagonal) pinch-zoom still works.
+    (function verticalPinch() {
+        let active = false, startSpread = 0, curSpread = 0;
+        document.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 2) {
+                const a = e.touches[0], b = e.touches[1];
+                const dx = Math.abs(a.clientX - b.clientX), dy = Math.abs(a.clientY - b.clientY);
+                active = dy > dx; // fingers stacked vertically
+                startSpread = curSpread = dy;
+            } else {
+                active = false;
+            }
+        }, { passive: false });
+        document.addEventListener('touchmove', (e) => {
+            if (active && e.touches.length === 2) {
+                curSpread = Math.abs(e.touches[0].clientY - e.touches[1].clientY);
+                e.preventDefault(); // claim the vertical pinch (suppress zoom for this gesture)
+            }
+        }, { passive: false });
+        document.addEventListener('touchend', (e) => {
+            if (!active || e.touches.length >= 2) return;
+            const delta = curSpread - startSpread;
+            active = false;
+            if (Math.abs(delta) > 60) applyHideDo(delta < 0, true); // pinch-in hides, spread shows
+        }, { passive: false });
+    })();
+
     // Tap a booking slot: book it with your initials, or clear it if it already holds yours.
     function quickBook(cell) {
         if (editorInput) { const ec = editorInput.closest('.cell'); commitEditor(ec, null); }
