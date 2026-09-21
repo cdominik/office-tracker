@@ -272,14 +272,14 @@ function render_blocked_day($colsPerDay)
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Office Presence Tracker</title>
+<title>Office Planner</title>
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
 <link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
 </head>
-<body class="view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?><?= (($_COOKIE['op_hide_do'] ?? '') === '1') ? ' hide-do' : '' ?>">
+<body class="app-tracker view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?><?= (($_COOKIE['op_hide_do'] ?? '') === '1') ? ' hide-do' : '' ?>">
 
 <div class="topbar">
-    <h1>Office Presence</h1>
+    <h1>Office Planner</h1>
     <div class="topbar-right">
         <span class="palette-wrap">
             <button type="button" class="palette-disc" id="paletteBtn" title="Switch colour palette" aria-label="Switch colour palette"></button>
@@ -293,6 +293,7 @@ function render_blocked_day($colsPerDay)
     </div>
 </div>
 
+<div class="frozen-bars">
 <div class="controlbar">
     <div class="nav-group">
         <a class="btn nav-btn" href="?view=<?= h($view) ?>&ref=<?= h($prevRef) ?>" title="Previous — ⌘/Ctrl+←">&larr;</a>
@@ -315,11 +316,12 @@ function render_blocked_day($colsPerDay)
     <button type="button" class="color-btn color-clear" data-color="none" title="Clear colour — ⌘/Ctrl+C">Clear</button>
     <button type="button" class="you-chip" id="youChip" title="Your initials for one-tap room booking — click to change"><span class="you-label">You: </span><span id="youInitials">—</span></button>
     <span class="palette-wrap">
-        <button type="button" class="do-disc" id="doToggle" title="Show or hide the double offices — for a compact room overview (pinch vertically on mobile)" aria-label="Show or hide double offices">D</button>
+        <button type="button" class="do-disc" id="doToggle" title="Show or hide the double offices (⌘/Ctrl+E) — a compact room overview; pinch vertically on mobile" aria-label="Show or hide double offices"><span class="do-d">D</span></button>
         <span class="palette-toast" id="doToast" role="status"></span>
     </span>
     <span class="toolbar-hint" id="toolbarHint">Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.</span>
-    <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b>Shortcuts &amp; tips</b><br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>Type into a multi-cell selection, then Enter — fills them all<br>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+← / → — previous / next<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+↑ / ↓ — scroll the page<br>Double-click a booking slot to edit it (e.g. to change someone else's)<br>The two-colour disc switches to a colour-blind-friendly palette</span></span>
+    <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b>Shortcuts &amp; tips</b><br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>⌘/Ctrl+Z — undo · ⌘/Ctrl+Shift+Z — redo<br>Type into a multi-cell selection, then Enter — fills them all<br>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+E — show / hide double offices<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+← / → — previous / next<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+↑ / ↓ — scroll the page<br>Double-click a booking slot to edit it (e.g. to change someone else's)<br>The two-colour disc switches to a colour-blind-friendly palette</span></span>
+</div>
 </div>
 
 <div class="grid-wrap">

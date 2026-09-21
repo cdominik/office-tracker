@@ -1,4 +1,4 @@
-# Office Presence Tracker
+# Office Planner
 
 A PHP + SQL app for tracking who's in the office and how meeting/booking spaces are used,
 laid out like a spreadsheet. Every day is split into 1-hour columns (9–17); desk presence is

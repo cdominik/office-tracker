@@ -67,8 +67,11 @@ h1 {
     gap: 12px;
 }
 
-/* --- Control bar: fixed-width left group so nav buttons never shift; the view group
-   sizes to its buttons (now four, incl. +Month+). --- */
+/* --- Control + tool bars: sit above the scrollable grid so they stay put (see below) --- */
+.frozen-bars {
+    background: var(--page-bg);
+    flex: 0 0 auto;
+}
 .controlbar {
     display: grid;
     grid-template-columns: 190px 1fr auto;
@@ -310,12 +313,23 @@ body.palette-cb {
 body.palette-cb .cell.color-green.selected { background-color: #aeddc8; }
 body.palette-cb .cell.color-red.selected { background-color: #eec680; }
 
+/* Tracker page: fill the viewport and let ONLY the grid scroll, so the bars and the grid's
+   own header stay frozen. (Other pages are unaffected — they lack .app-tracker.) */
+body.app-tracker {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
 .grid-wrap {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    overflow-x: auto;
+    overflow: auto;                 /* scrolls both ways; the grid header sticks within it */
     box-shadow: 0 1px 2px rgba(20, 20, 30, 0.03);
+    flex: 1 1 auto;
+    min-height: 0;                  /* allow the flex child to shrink and scroll */
 }
 
 table.grid {
@@ -328,6 +342,18 @@ table.grid {
 table.grid th, table.grid td {
     border: 1px solid var(--border);
 }
+
+/* Freeze the grid's day/hour header at the top of the scroll area. The 2nd header row
+   sticks just below the 1st (its height is measured into --hdr1-h by JS). */
+table.grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+table.grid thead tr:nth-child(2) th {
+    top: var(--hdr1-h, 0px);
+}
+table.grid thead th.sticky-col { z-index: 25; } /* header's frozen left columns sit above */
 
 .col-office { width: 74px; }
 .col-name { width: 168px; }
@@ -866,19 +892,19 @@ html.theme-dark {
     --accent-bg: rgba(91, 140, 255, 0.18);
 
     /* Standard status colours — deep, muted fills with light text. */
-    --green-bg: #1f3d2e;
-    --green-border: #356b4c;
-    --green-text: #c4e8d2;
-    --red-bg: #47272a;
-    --red-border: #7c4348;
-    --red-text: #f1c6c6;
+    --green-bg: #2c6046;
+    --green-border: #47966c;
+    --green-text: #d6f0e0;
+    --red-bg: #8a3b40;
+    --red-border: #ba5a60;
+    --red-text: #f7d3d4;
     --swatch-free: #4fb082;
     --swatch-occ: #d97b72;
 
     /* Tints and stripes for dark. */
-    --tint-m: #1f3735;
-    --tint-f: #212a3a;
-    --tint-t: #2e2540;
+    --tint-m: #244a47;
+    --tint-f: #273350;
+    --tint-t: #3a2f56;
     --stripe-a: #23272e;
     --stripe-b: #1b1f25;
 
@@ -888,26 +914,26 @@ html.theme-dark {
     --divider-ampm: #556069;
 }
 
-/* Colour-blind palette in dark: orange / bluish-green, dark fills. */
+/* Colour-blind palette in dark: orange / bluish-green, brighter fills so they read clearly. */
 html.theme-dark body.palette-cb {
-    --green-bg: #123f43;
-    --green-border: #2c7076;
-    --green-text: #c0e9ec;
-    --red-bg: #4a3510;
-    --red-border: #7d5a1d;
-    --red-text: #f1d6a0;
+    --green-bg: #1f6a70;
+    --green-border: #3c9aa0;
+    --green-text: #cfeced;
+    --red-bg: #9c6316;
+    --red-border: #c98a34;
+    --red-text: #f7dcab;
     --swatch-free: #3fb0b0;
     --swatch-occ: #e0a94b;
-    --tint-m: #3a381c;
-    --tint-f: #212a3a;
-    --tint-t: #2b2340;
+    --tint-m: #4a4620;
+    --tint-f: #273350;
+    --tint-t: #372c56;
 }
 
 /* Selected-cell blends for dark (a touch lighter than the fill). */
-html.theme-dark .cell.color-green.selected { background-color: #2a5540; }
-html.theme-dark .cell.color-red.selected { background-color: #5e3639; }
-html.theme-dark body.palette-cb .cell.color-green.selected { background-color: #1f5a50; }
-html.theme-dark body.palette-cb .cell.color-red.selected { background-color: #654918; }
+html.theme-dark .cell.color-green.selected { background-color: #38765a; }
+html.theme-dark .cell.color-red.selected { background-color: #a24c52; }
+html.theme-dark body.palette-cb .cell.color-green.selected { background-color: #2b8288; }
+html.theme-dark body.palette-cb .cell.color-red.selected { background-color: #ba7a26; }
 
 /* A few surfaces that are dark in both themes look fine as-is (save/select/help toasts).
    Inputs and selects need explicit dark surfaces. */
@@ -969,13 +995,15 @@ body.hide-do tr.room-do { display: none; }
     position: relative;
 }
 .do-disc:hover { background: var(--hover); }
+.do-d { display: block; transform: translateY(1.5px); } /* optical-centre the capital D */
 /* When double offices are hidden, show the disc as "off": a strike through the D. */
 body.hide-do .do-disc { color: var(--text-faint); }
 body.hide-do .do-disc::after {
     content: "";
     position: absolute;
-    left: 3px; right: 3px; top: 50%;
+    left: 3px; right: 3px;
+    top: 50%;
     height: 2px;
     background: var(--text-faint);
-    transform: rotate(-20deg);
+    transform: translateY(-50%) rotate(-20deg);
 }

@@ -44,14 +44,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Office Presence — sign in</title>
+<title>Office Planner — sign in</title>
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
 <link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
 </head>
 <body>
 <div class="login-wrap">
     <form class="login-card" method="post">
-        <h1>Office Presence</h1>
+        <h1>Office Planner</h1>
         <p class="login-sub">Enter the shared password to continue.</p>
         <input type="hidden" name="next" value="<?= h($next) ?>">
         <input type="password" name="password" placeholder="Password" autofocus required>

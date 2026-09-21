@@ -18,6 +18,15 @@
 
     const cells = Array.from(document.querySelectorAll('.cell'));
 
+    // Feed the 2nd-header-row offset to CSS (so it sticks just below the 1st header row).
+    function setStickyOffsets() {
+        const r1 = document.querySelector('.grid thead tr');
+        document.documentElement.style.setProperty('--hdr1-h', (r1 ? r1.offsetHeight : 0) + 'px');
+    }
+    setStickyOffsets();
+    window.addEventListener('load', setStickyOffsets);
+    window.addEventListener('resize', setStickyOffsets);
+
     // Admin-gate: clicking "Manage rooms & desks" asks for confirmation first, so a regular
     // user doesn't wander into the setup page and change things by accident.
     (function adminGate() {
@@ -74,6 +83,7 @@
     let dragKey = null;
     let dragAnchorIndex = null;
     let editorInput = null;
+    let editorPrevText = ''; // text a cell held before its editor opened (for undo)
     let touchSelectMode = false; // mobile long-press multi-select mode
     let currentRevision = (window.TRACKER && typeof window.TRACKER.revision !== 'undefined')
         ? window.TRACKER.revision : null;
@@ -359,13 +369,16 @@
             if (!myInitials) return;         // still empty (blank entry) — do nothing
         }
 
+        const before = cell.textContent;
         const current = cell.textContent.trim();
         if (current === '') {
             cell.textContent = myInitials;
             saveCellText(cell);
+            recordOp('text', [{ cell, from: before, to: cell.textContent }]);
         } else if (current === myInitials) {
             cell.textContent = '';           // tapping your own booking clears it
             saveCellText(cell);
+            recordOp('text', [{ cell, from: before, to: '' }]);
         } else {
             // Someone else's booking — leave it, just note who.
             flashHint('That slot is booked by ' + current + '. Double-click to edit it.');
@@ -450,7 +463,10 @@
         window.location = '?view=' + encodeURIComponent(window.TRACKER.view) + '&ref=' + encodeURIComponent(ref);
     }
     function pageScroll(dir) {
-        window.scrollBy({ top: dir * Math.round(window.innerHeight * 0.85), behavior: 'smooth' });
+        const gw = document.querySelector('.grid-wrap');
+        const amount = dir * Math.round((gw ? gw.clientHeight : window.innerHeight) * 0.85);
+        if (gw) gw.scrollBy({ top: amount, behavior: 'smooth' });
+        else window.scrollBy({ top: amount, behavior: 'smooth' });
     }
 
     // Plain arrow / Tab: move the single-cell selection.
@@ -477,6 +493,10 @@
         // (Cmd/Ctrl+T new tab, +N new window, +W close). Cmd/Ctrl+1..9 (switch tab) DO reach
         // the page and are cancelable, so the view shortcuts below work. "Today" can't use the
         // reserved Cmd/Ctrl+T, so it's on Home and Cmd/Ctrl+. instead.
+        // Undo / redo (this session). Redo = Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y.
+        if (mod && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) redo(); else undo(); return; }
+        if (mod && (e.key === 'y' || e.key === 'Y') && !e.altKey) { e.preventDefault(); redo(); return; }
+
         if (mod && !e.altKey && !e.shiftKey) {
             const k = e.key.toLowerCase();
             // Colors: only override the browser default when desk cells are selected,
@@ -489,6 +509,8 @@
             if (k === '2' || e.code === 'Digit2') { e.preventDefault(); gotoView('week'); return; }
             if (k === '3' || e.code === 'Digit3') { e.preventDefault(); gotoView('month'); return; }
             if (k === '4' || e.code === 'Digit4') { e.preventDefault(); gotoView('monthx'); return; }
+            // Toggle the double-offices display (compact room overview).
+            if (k === 'e') { e.preventDefault(); applyHideDo(!document.body.classList.contains('hide-do'), true); return; }
             // Today: Cmd/Ctrl+.  (Cmd/Ctrl+T is reserved by the browser and can't be caught).
             if (k === '.') { e.preventDefault(); gotoRef(window.TRACKER.todayRef); return; }
             // Prev / next period: Cmd/Ctrl + arrow.
@@ -531,10 +553,12 @@
             arrowMove(neighborV(activeCell, -1), e.shiftKey);
         } else if (e.key === 'Delete' || e.key === 'Backspace') {
             e.preventDefault();
+            const items = Array.from(selected).map((c) => ({ cell: c, from: c.textContent, to: '' }));
             selected.forEach((c) => {
                 c.textContent = '';
                 saveCellText(c);
             });
+            recordOp('text', items);
         } else if (e.key === 'Escape') {
             clearSelection();
             setActive(null);
@@ -556,17 +580,21 @@
         const targets = selected.size > 1 ? Array.from(selected) : [activeCell];
 
         if (parts.length > 1 && targets.length > 1) {
+            const items = targets.map((c, i) => ({ cell: c, from: c.textContent, to: (parts[i] !== undefined ? parts[i] : '') }));
             targets.forEach((c, i) => {
                 const v = parts[i] !== undefined ? parts[i] : '';
                 c.textContent = v;
                 saveCellText(c);
             });
+            recordOp('text', items);
         } else {
             const v = text.trim();
+            const items = targets.map((c) => ({ cell: c, from: c.textContent, to: v }));
             targets.forEach((c) => {
                 c.textContent = v;
                 saveCellText(c);
             });
+            recordOp('text', items);
         }
     });
 
@@ -574,6 +602,7 @@
 
     function openEditor(cell, initialValue, keepCursorAtEnd, forceChar) {
         closeEditor(false);
+        editorPrevText = cell.textContent; // remember for undo (cleared below)
         const input = document.createElement('input');
         input.type = 'text';
         input.className = 'cell-editor';
@@ -621,10 +650,16 @@
             targets = Array.from(selected).filter((c) => c.dataset.kind === cell.dataset.kind);
             if (targets.length === 0) targets = [cell];
         }
+        const items = targets.map((c) => ({
+            cell: c,
+            from: (c === cell) ? editorPrevText : c.textContent, // edited cell's text was cleared on open
+            to: value,
+        }));
         targets.forEach((c) => {
             c.textContent = value;
             saveCellText(c);
         });
+        recordOp('text', items);
 
         // Move to the next cell only for a single-cell edit; a multi-fill keeps the block.
         if (after && targets.length === 1) after();
@@ -651,6 +686,60 @@
         toolbarHint._t = setTimeout(() => { toolbarHint.textContent = defaultHint; }, 3500);
     }
 
+    // ---- Undo / redo (this session, this browser; a few steps) ----
+    const undoStack = [];
+    const redoStack = [];
+    const UNDO_MAX = 40;
+    let restoring = false; // true while an undo/redo is re-applying, so it isn't itself recorded
+
+    function cellColorOf(c) {
+        return c.classList.contains('color-green') ? 'green'
+            : c.classList.contains('color-red') ? 'red' : 'none';
+    }
+    function setCellColorClass(c, color) {
+        c.classList.remove('color-green', 'color-red');
+        if (color === 'green') c.classList.add('color-green');
+        else if (color === 'red') c.classList.add('color-red');
+    }
+    // Record one operation. items: [{cell, from, to}]. No-op items (from === to) are dropped.
+    function recordOp(type, items) {
+        if (restoring) return;
+        const changed = items.filter((it) => it.from !== it.to);
+        if (!changed.length) return;
+        undoStack.push({ type, items: changed });
+        if (undoStack.length > UNDO_MAX) undoStack.shift();
+        redoStack.length = 0; // a fresh action invalidates the redo trail
+    }
+    function applyOp(op, key) { // key = 'from' (undo) or 'to' (redo)
+        restoring = true;
+        try {
+            if (op.type === 'color') {
+                op.items.forEach((it) => setCellColorClass(it.cell, it[key]));
+                const groups = {};
+                op.items.forEach((it) => { (groups[it[key]] = groups[it[key]] || []).push(it.cell); });
+                Object.keys(groups).forEach((col) => saveBatchColor(groups[col], col));
+            } else {
+                op.items.forEach((it) => { it.cell.textContent = it[key]; saveCellText(it.cell); });
+            }
+        } finally {
+            restoring = false;
+        }
+    }
+    function undo() {
+        const op = undoStack.pop();
+        if (!op) { showIndicator('Nothing to undo'); return; }
+        redoStack.push(op);
+        applyOp(op, 'from');
+        showIndicator('Undone');
+    }
+    function redo() {
+        const op = redoStack.pop();
+        if (!op) { showIndicator('Nothing to redo'); return; }
+        undoStack.push(op);
+        applyOp(op, 'to');
+        showIndicator('Redone');
+    }
+
     function applyColor(color) {
         if (selected.size === 0) {
             showIndicator('Select one or more desk cells first', true);
@@ -665,12 +754,14 @@
             return;
         }
 
+        const items = deskCells.map((c) => ({ cell: c, from: cellColorOf(c), to: color }));
         deskCells.forEach((c) => {
             c.classList.remove('color-green', 'color-red');
             if (color === 'green') c.classList.add('color-green');
             if (color === 'red') c.classList.add('color-red');
         });
         saveBatchColor(deskCells, color);
+        recordOp('color', items);
 
         if (skipped > 0) {
             flashHint(skipped + ' meeting-room cell(s) in the selection were left untouched (they color automatically).');
