@@ -45,6 +45,7 @@ api_guard(function () use ($pdo) {
 
     } elseif ($field === 'purge_old') {
         // Delete presence + booking data older than one month (keeps rooms/desks).
+        backup_create($pdo, true); // kept safety snapshot before a destructive action
         $cutoff = (new DateTime('today'))->modify('-1 month')->format('Y-m-d');
         $d1 = $pdo->prepare("DELETE FROM desk_status WHERE date < ?");
         $d1->execute([$cutoff]);
@@ -64,9 +65,21 @@ api_guard(function () use ($pdo) {
         $pdo->prepare("UPDATE rooms SET visible = ? WHERE id = ?")
             ->execute([!empty($data['value']) ? 1 : 0, $roomId]);
 
+    } elseif ($field === 'room_has_table') {
+        $roomId = (int)($data['room_id'] ?? 0);
+        if ($roomId <= 0) {
+            http_response_code(400);
+            echo json_encode(['ok' => false, 'error' => 'bad request']);
+            return;
+        }
+        // Only offices can have a meeting table.
+        $pdo->prepare("UPDATE rooms SET has_table = ? WHERE id = ? AND room_type IN ('DO','SO','LO','EC')")
+            ->execute([!empty($data['value']) ? 1 : 0, $roomId]);
+        bump_revision($pdo);
+
     } elseif ($field === 'flag') {
         $key = (string)($data['key'] ?? '');
-        if (!in_array($key, ['show_DO', 'show_SO', 'show_M', 'show_F', 'show_T', 'show_SO_table', 'auth_enabled'], true)) {
+        if (!in_array($key, ['show_DO', 'show_SO', 'show_LO', 'show_EC', 'show_M', 'show_F', 'show_T', 'show_SO_table', 'auth_enabled', 'admin_auth_enabled', 'confirm_occ_booking', 'focus_minimal'], true)) {
             http_response_code(400);
             echo json_encode(['ok' => false, 'error' => 'bad flag']);
             return;

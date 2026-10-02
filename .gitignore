@@ -1,6 +1,8 @@
-# macOS
-.DS_Store
+# Runtime data — never commit the live database, its WAL side-files, or backups.
+/data/
 
-# Live SQLite database (recreated automatically by config.php on first run)
-data/*.sqlite
-data/*.sqlite-journal
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*~
+*.swp

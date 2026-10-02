@@ -75,6 +75,20 @@
         });
     });
 
+    // Radio-group flags (e.g. meeting-space focus mode).
+    document.querySelectorAll('.auto-flag-radio').forEach((radio) => {
+        radio.addEventListener('change', () => {
+            if (radio.checked) post({ field: 'flag', key: radio.dataset.key, value: parseInt(radio.value, 10) }, radio.closest('label'));
+        });
+    });
+
+    // Per-room "Bookable meeting table" checkboxes.
+    document.querySelectorAll('.auto-roomtable').forEach((box) => {
+        box.addEventListener('change', () => {
+            post({ field: 'room_has_table', room_id: box.dataset.roomId, value: box.checked ? 1 : 0 }, box.closest('label'));
+        });
+    });
+
     // Maintenance: delete data older than one month (with confirmation).
     const purgeBtn = document.getElementById('purgeBtn');
     if (purgeBtn) {
@@ -95,7 +109,7 @@
         });
     }
 
-    // After adding a DO/SO room, land the cursor in its first desk-name field.
+    // After adding an office (any type with desks), land the cursor in its first desk-name field.
     // Otherwise, keep the scroll position across the full-page actions that reload
     // (delete / move / add of a deskless room), so the page doesn't jump to the top.
     try {

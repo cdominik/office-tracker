@@ -2,6 +2,7 @@
 require __DIR__ . '/config.php';
 require __DIR__ . '/assets/icons.php';
 require_auth_page($pdo);
+run_backup_if_due($pdo); // rotating SQLite snapshots (no cron needed)
 
 function h($s) { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
@@ -130,16 +131,20 @@ $rooms = $pdo->query("SELECT * FROM rooms ORDER BY sort_order, room_number")->fe
 $typeVisible = [
     'DO' => get_flag($pdo, 'show_DO', 1) === 1,
     'SO' => get_flag($pdo, 'show_SO', 1) === 1,
+    'LO' => get_flag($pdo, 'show_LO', 1) === 1,
+    'EC' => get_flag($pdo, 'show_EC', 1) === 1,
     'M'  => get_flag($pdo, 'show_M', 1) === 1,
     'F'  => get_flag($pdo, 'show_F', 1) === 1,
     'T'  => get_flag($pdo, 'show_T', 1) === 1,
 ];
-$rooms = array_values(array_filter($rooms, function ($r) use ($typeVisible) {
-    return ($typeVisible[$r['room_type']] ?? true) && ((int)($r['visible'] ?? 1) === 1);
-}));
-
-// Whether single-occupancy offices show their shared meeting-table booking line.
-$showSOtable = get_flag($pdo, 'show_SO_table', 1) === 1;
+$showAll = (($_COOKIE['op_showall'] ?? '') === '1'); // hidden "show every room" override (Cmd+A)
+$focusActive = (($_COOKIE['op_hide_do'] ?? '') === '1') && !$showAll; // meeting-space focus on
+$focusMinimal = get_flag($pdo, 'focus_minimal', 0) === 1; // experiment: in focus, hide tabled offices' desks
+if (!$showAll) {
+    $rooms = array_values(array_filter($rooms, function ($r) use ($typeVisible) {
+        return ($typeVisible[$r['room_type']] ?? true) && ((int)($r['visible'] ?? 1) === 1);
+    }));
+}
 
 $desks = $pdo->query("SELECT * FROM desks ORDER BY room_id, seat_index")->fetchAll(PDO::FETCH_ASSOC);
 $desksByRoom = [];
@@ -208,11 +213,12 @@ foreach ($bookingStmt->fetchAll(PDO::FETCH_ASSOC) as $b) {
 
 $typeLabel = ['DO' => 'DO', 'SO' => 'SO', 'M' => 'M', 'F' => 'F', 'T' => 'T'];
 
-// Room identifier shown in the "Room" column: type abbreviation + the room number.
-// The stored type codes stay DO/SO/M/F/T; only the display is shortened (DO->D, SO->S).
+// Room identifier shown in the "Room" column: a single-letter type code + the room number.
+// Stored codes map to display letters: DO->D, SO->S, LO->O (general office), EC->E; M/F/T unchanged.
 function room_ident(array $room): string
 {
-    static $disp = ['DO' => 'D', 'SO' => 'S', 'M' => 'M', 'F' => 'F', 'T' => 'T'];
+    // Note: 'LO' is the internal code for the "Office" type (formerly "Large office"); shown as O.
+    static $disp = ['DO' => 'D', 'SO' => 'S', 'LO' => 'O', 'EC' => 'E', 'M' => 'M', 'F' => 'F', 'T' => 'T'];
     $type = $disp[$room['room_type']] ?? $room['room_type'];
     $num = trim((string)$room['room_number']);
     return '<span class="room-ident">'
@@ -221,7 +227,7 @@ function room_ident(array $room): string
         . '</span>';
 }
 
-function render_desk_cell($desk, $dateStr, $period, $statusMap, $colspan = 4, $extra = '')
+function render_desk_cell($desk, $dateStr, $period, $statusMap, $colspan = 4, $extra = '', $officeRoom = 0)
 {
     $cell = $statusMap[$desk['id']][$dateStr][$period] ?? ['text' => '', 'color' => 'none'];
     $colorClass = 'color-' . h($cell['color']);
@@ -229,10 +235,11 @@ function render_desk_cell($desk, $dateStr, $period, $statusMap, $colspan = 4, $e
     echo '<td colspan="' . (int)$colspan . '" class="cell desk-cell ' . $colorClass . $extra . '"'
         . ' data-kind="desk" data-row-key="desk-' . (int)$desk['id'] . '"'
         . ' data-desk="' . (int)$desk['id'] . '" data-date="' . h($dateStr) . '" data-period="' . h($period) . '"'
+        . ($officeRoom > 0 ? ' data-office-room="' . (int)$officeRoom . '"' : '')
         . ' tabindex="0">' . h($cell['text']) . '</td>';
 }
 
-function render_booking_cells($days, $roomId, $bookingMap)
+function render_booking_cells($days, $roomId, $bookingMap, $occByDate = null)
 {
     foreach ($days as $d) {
         $dateStr = $d->format('Y-m-d');
@@ -242,8 +249,13 @@ function render_booking_cells($days, $roomId, $bookingMap)
             $edgeClass = '';
             if ($hour === 9) { $edgeClass = ' day-start'; }
             elseif ($hour === 13) { $edgeClass = ' pm-start'; }
-            echo '<td class="cell hour-cell ' . $colorClass . $edgeClass . '"'
+            // Office-occupied hint (any office's meeting table): if any desk in the office is
+            // occupied for this half-day, faintly flag the table hour.
+            $period = ($hour <= 12) ? 'am' : 'pm';
+            $occ = $occByDate && !empty($occByDate[$dateStr][$period]);
+            echo '<td class="cell hour-cell ' . $colorClass . $edgeClass . ($occ ? ' office-occ-hint' : '') . '"'
                 . ' data-kind="booking" data-row-key="book-' . (int)$roomId . '"'
+                . ($occ ? ' data-office-occ="1"' : '')
                 . ' data-room="' . (int)$roomId . '" data-date="' . h($dateStr) . '" data-hour="' . (int)$hour . '"'
                 . ' tabindex="0">' . h($text) . '</td>';
         }
@@ -266,6 +278,19 @@ function render_blocked_day($colsPerDay)
 {
     echo '<td colspan="' . (int)$colsPerDay . '" class="booking-off" aria-hidden="true"></td>';
 }
+
+// A small 12-dot (4×3) glyph shown after a desk name to open its year planner (desktop).
+function year_open_icon(): string
+{
+    $dots = '';
+    for ($r = 0; $r < 3; $r++) {
+        for ($c = 0; $c < 4; $c++) {
+            $dots .= '<circle cx="' . (2 + $c * 4) . '" cy="' . (2 + $r * 4) . '" r="1.15"/>';
+        }
+    }
+    return '<button type="button" class="year-open" title="Open year planner" aria-label="Open year planner">'
+        . '<svg viewBox="0 0 16 12" width="15" height="12" fill="currentColor">' . $dots . '</svg></button>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -274,9 +299,14 @@ function render_blocked_day($colsPerDay)
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Office Planner</title>
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
+<link rel="icon" href="<?= asset_url('favicon.ico') ?>" sizes="any">
+<link rel="icon" href="<?= asset_url('assets/favicon.svg') ?>" type="image/svg+xml">
+<link rel="icon" href="<?= asset_url('assets/favicon-32.png') ?>" sizes="32x32" type="image/png">
+<link rel="icon" href="<?= asset_url('assets/favicon-16.png') ?>" sizes="16x16" type="image/png">
+<link rel="apple-touch-icon" href="<?= asset_url('assets/apple-touch-icon.png') ?>">
 <link rel="stylesheet" href="<?= asset_url('assets/style.css') ?>">
 </head>
-<body class="app-tracker view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?><?= (($_COOKIE['op_hide_do'] ?? '') === '1') ? ' hide-do' : '' ?>">
+<body class="app-tracker view-<?= h($view) ?><?= $isMonth ? ' view-monthlike' : '' ?><?= (($_COOKIE['op_palette'] ?? '') === 'cb') ? ' palette-cb' : '' ?><?= ((($_COOKIE['op_hide_do'] ?? '') === '1') && !$showAll) ? ' hide-do' : '' ?><?= $showAll ? ' show-all' : '' ?>">
 
 <div class="topbar">
     <h1>Office Planner</h1>
@@ -293,6 +323,33 @@ function render_blocked_day($colsPerDay)
     </div>
 </div>
 
+<?php if ($showAll): ?>
+<div class="showall-badge" id="showAllBadge" title="Showing every room, ignoring all visibility settings — click or press ⌘/Ctrl+A to exit">Showing all rooms ✕</div>
+<?php endif; ?>
+
+<div class="ctx-menu" id="ctxMenu" hidden></div>
+
+<div class="year-overlay" id="yearOverlay" hidden>
+    <div class="year-panel" role="dialog" aria-modal="true" aria-label="Year planner">
+        <div class="year-head">
+            <span class="year-title" id="yearTitle">—</span>
+            <span class="year-tools">
+                <button type="button" class="color-btn color-green" id="yearFree">Free</button>
+                <button type="button" class="color-btn color-red" id="yearOcc">Occ</button>
+                <button type="button" class="color-btn color-clear" id="yearClear">Clear</button>
+            </span>
+            <span class="year-nav">
+                <button type="button" class="btn btn-small" id="yearPrev" title="Previous year (⌘/Ctrl+←)">&larr;</button>
+                <span class="year-label" id="yearLabel">—</span>
+                <button type="button" class="btn btn-small" id="yearNext" title="Next year (⌘/Ctrl+→)">&rarr;</button>
+            </span>
+            <button type="button" class="btn btn-small year-close" id="yearClose" title="Close (Esc)">&times;</button>
+        </div>
+        <p class="year-hint">Click a weekday to cycle occ → free → clear. Drag or Shift-click to select a range, then Free / Occ / Clear. Right-click for occ / free / half-day options. Weekends are greyed.</p>
+        <div class="year-grid" id="yearGrid"></div>
+    </div>
+</div>
+
 <div class="frozen-bars">
 <div class="controlbar">
     <div class="nav-group">
@@ -304,8 +361,8 @@ function render_blocked_day($colsPerDay)
     <div class="view-group">
         <a class="btn view-btn <?= $view === 'day' ? 'active' : '' ?>" href="?view=day&ref=<?= h($ref->format('Y-m-d')) ?>" title="Day — ⌘/Ctrl+1"><span class="v-full">Day</span><span class="v-short">D</span></a>
         <a class="btn view-btn <?= $view === 'week' ? 'active' : '' ?>" href="?view=week&ref=<?= h($ref->format('Y-m-d')) ?>" title="Week — ⌘/Ctrl+2"><span class="v-full">Week</span><span class="v-short">W</span></a>
-        <a class="btn view-btn <?= $view === 'month' ? 'active' : '' ?>" href="?view=month&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month — ⌘/Ctrl+3"><span class="v-full">Month</span><span class="v-short">M</span></a>
-        <a class="btn view-btn <?= $view === 'monthx' ? 'active' : '' ?>" href="?view=monthx&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month padded out to full Mon–Fri weeks — ⌘/Ctrl+4"><span class="v-full">+Month+</span><span class="v-short">+M+</span></a>
+        <a class="btn view-btn view-month <?= $view === 'month' ? 'active' : '' ?>" href="?view=month&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month — ⌘/Ctrl+3"><span class="v-full">Month</span><span class="v-short">M</span></a>
+        <a class="btn view-btn view-month <?= $view === 'monthx' ? 'active' : '' ?>" href="?view=monthx&ref=<?= h($ref->format('Y-m-d')) ?>" title="Month padded out to full Mon–Fri weeks — ⌘/Ctrl+4"><span class="v-full">+Month+</span><span class="v-short">+M+</span></a>
     </div>
 </div>
 
@@ -316,11 +373,11 @@ function render_blocked_day($colsPerDay)
     <button type="button" class="color-btn color-clear" data-color="none" title="Clear colour — ⌘/Ctrl+C">Clear</button>
     <button type="button" class="you-chip" id="youChip" title="Your initials for one-tap room booking — click to change"><span class="you-label">You: </span><span id="youInitials">—</span></button>
     <span class="palette-wrap">
-        <button type="button" class="do-disc" id="doToggle" title="Show or hide the double offices (⌘/Ctrl+E) — a compact room overview; pinch vertically on mobile" aria-label="Show or hide double offices"><span class="do-d">D</span></button>
+        <button type="button" class="do-disc" id="doToggle" title="Focus the view on finding a meeting space — hides the desk offices (⌘/Ctrl+E; pinch vertically on mobile)" aria-label="Focus on meeting space" aria-pressed="false"><svg class="mtg-icon" viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="3.4" r="1.8"/><circle cx="19.4" cy="7.7" r="1.8"/><circle cx="19.4" cy="16.3" r="1.8"/><circle cx="12" cy="20.6" r="1.8"/><circle cx="4.6" cy="16.3" r="1.8"/><circle cx="4.6" cy="7.7" r="1.8"/></svg></button>
         <span class="palette-toast" id="doToast" role="status"></span>
     </span>
     <span class="toolbar-hint" id="toolbarHint">Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.</span>
-    <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b>Shortcuts &amp; tips</b><br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>⌘/Ctrl+Z — undo · ⌘/Ctrl+Shift+Z — redo<br>Type into a multi-cell selection, then Enter — fills them all<br>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+E — show / hide double offices<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+← / → — previous / next<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+↑ / ↓ — scroll the page<br>Double-click a booking slot to edit it (e.g. to change someone else's)<br>The two-colour disc switches to a colour-blind-friendly palette</span></span>
+    <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b class="ht-title">Shortcuts &amp; tips</b><span class="ht-sec"><span class="ht-h">Editing</span>Drag, Shift or ⌘/Ctrl-click to select cells<br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>Type into a selection, then Enter — fill all<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+Z / +Shift+Z — undo / redo<br>Double-click a booking slot to edit it<br>Right-click a desk cell for Free / Occ / Clear</span><span class="ht-sec"><span class="ht-h">Navigate</span>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+← / → — previous / next<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+↑ / ↓ — scroll the grid</span><span class="ht-sec"><span class="ht-h">View</span>Double-click a desk name — open its year planner<br>⌘/Ctrl+E — focus on meeting space (hide desk offices)<br>⌘/Ctrl+A — show every room (ignore hide settings)<br>Two-colour disc — colour-blind palette</span></span></span>
 </div>
 </div>
 
@@ -387,53 +444,75 @@ function render_blocked_day($colsPerDay)
             return $c;
         };
     ?>
-        <?php if ($type === 'DO'):
+        <?php if (in_array($type, ['DO', 'SO', 'LO', 'EC'], true)):
             $roomDesks = $desksByRoom[$roomId] ?? [];
-            $seats = [0 => null, 1 => null];
-            foreach ($roomDesks as $d) { $seats[(int)$d['seat_index']] = $d; }
+            usort($roomDesks, fn($a, $b) => (int)$a['seat_index'] <=> (int)$b['seat_index']);
+            $nDesks = count($roomDesks);
+            $isEC = ($type === 'EC');
+            $hasTable = ((int)($room['has_table'] ?? 0) === 1);
+            // Experiment: in meeting-space focus, a tabled office can show just its table (desks hidden),
+            // relying on the occupied hint. Rendered server-side so the room number lands on the table row.
+            $renderDesks = !($focusActive && $focusMinimal && $hasTable);
+            $rowspan = ($renderDesks ? max(1, $nDesks) : 0) + ($hasTable ? 1 : 0);
+            if ($rowspan < 1) { $rowspan = 1; }
+            // Meeting-space focus hides desk-only offices; an office WITH a table stays visible,
+            // because you need its desks' presence to judge whether the table may be taken.
+            $focusHide = $hasTable ? '' : 'room-do';
+            // The table's "office occupied" hint is on if ANY desk is occupied (red) that half-day.
+            $occByDate = [];
+            if ($hasTable) {
+                foreach ($days as $d) {
+                    $ds = $d->format('Y-m-d');
+                    $amOcc = false; $pmOcc = false;
+                    foreach ($roomDesks as $dk) {
+                        if (($statusMap[$dk['id']][$ds]['am']['color'] ?? 'none') === 'red') $amOcc = true;
+                        if (($statusMap[$dk['id']][$ds]['pm']['color'] ?? 'none') === 'red') $pmOcc = true;
+                    }
+                    $occByDate[$ds] = ['am' => $amOcc, 'pm' => $pmOcc];
+                }
+            }
             $firstRow = true;
         ?>
-            <?php foreach ([0, 1] as $seatIdx): $desk = $seats[$seatIdx]; if (!$desk) continue; ?>
-                <tr class="room-do <?= $firstRow ? 'room-start' : '' ?>">
-                    <?php if ($seatIdx === 0): ?>
-                        <td class="col-office sticky-col <?= $tint ?>" rowspan="2"><?= room_ident($room) ?></td>
+            <?php if ($renderDesks): foreach ($roomDesks as $i => $desk): ?>
+                <tr class="<?= $focusHide ?> <?= $firstRow ? 'room-start' : '' ?>">
+                    <?php if ($firstRow): ?>
+                        <td class="col-office sticky-col <?= $tint ?>" rowspan="<?= $rowspan ?>"><?= room_ident($room) ?></td>
                     <?php endif; ?>
-                    <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
+                    <td class="col-name sticky-col sticky-col-2 desk-name-cell <?= $tint ?>" data-desk="<?= (int)$desk['id'] ?>" data-desk-name="<?= h($desk['name'] !== '' ? $desk['name'] : 'Desk ' . ((int)$desk['seat_index'] + 1)) ?>">
                         <span class="pictogram"><?= icon_for_room_line('desk') ?></span>
-                        <span class="line-label"><?= desk_name_label($desk, $deskShort) ?></span>
+                        <span class="line-label"><?php if ($isEC): ?><span class="desk-num"><?= $i + 1 ?></span><?php endif; ?><?= desk_name_label($desk, $deskShort) ?></span>
+                        <?= year_open_icon() ?>
                     </td>
                     <?php if ($dayBlocked): render_blocked_day($colsPerDay); else: foreach ($days as $d):
                         $dateStr = $d->format('Y-m-d');
-                        render_desk_cell($desk, $dateStr, 'am', $statusMap, $deskColspan, $amExtra($d));
-                        render_desk_cell($desk, $dateStr, 'pm', $statusMap, $deskColspan, $pmExtra($d));
+                        render_desk_cell($desk, $dateStr, 'am', $statusMap, $deskColspan, $amExtra($d), $roomId);
+                        render_desk_cell($desk, $dateStr, 'pm', $statusMap, $deskColspan, $pmExtra($d), $roomId);
                     endforeach; endif; ?>
                 </tr>
                 <?php $firstRow = false; ?>
-            <?php endforeach; ?>
-
-        <?php elseif ($type === 'SO'):
-            $roomDesks = $desksByRoom[$roomId] ?? [];
-            $desk = $roomDesks[0] ?? null;
-        ?>
-            <tr class="room-start">
-                <td class="col-office sticky-col <?= $tint ?>" rowspan="<?= $showSOtable ? 2 : 1 ?>"><?= room_ident($room) ?></td>
-                <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
-                    <span class="pictogram"><?= icon_for_room_line('desk') ?></span>
-                    <span class="line-label"><?= $desk ? desk_name_label($desk, $deskShort) : '—' ?></span>
-                </td>
-                <?php if ($dayBlocked): render_blocked_day($colsPerDay); elseif ($desk): foreach ($days as $d):
-                    $dateStr = $d->format('Y-m-d');
-                    render_desk_cell($desk, $dateStr, 'am', $statusMap, $deskColspan, $amExtra($d));
-                    render_desk_cell($desk, $dateStr, 'pm', $statusMap, $deskColspan, $pmExtra($d));
-                endforeach; endif; ?>
-            </tr>
-            <?php if ($showSOtable): ?>
-            <tr>
+            <?php endforeach; endif; ?>
+            <?php if ($hasTable): ?>
+            <tr class="<?= $focusHide ?> <?= $firstRow ? 'room-start' : '' ?>">
+                <?php if ($firstRow): ?>
+                    <td class="col-office sticky-col <?= $tint ?>" rowspan="<?= $rowspan ?>"><?= room_ident($room) ?></td>
+                <?php endif; ?>
                 <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
                     <span class="pictogram"><?= icon_for_room_line('table') ?></span>
                 </td>
-                <?php if ($dayBlocked) { render_blocked_day($colsPerDay); } elseif ($hourly) { render_booking_cells($days, $roomId, $bookingMap); } else { render_booking_disabled($days, $colsPerDay, $offMonth); } ?>
+                <?php
+                if ($dayBlocked) { render_blocked_day($colsPerDay); }
+                elseif ($hourly) { render_booking_cells($days, $roomId, $bookingMap, $occByDate); }
+                else { render_booking_disabled($days, $colsPerDay, $offMonth); }
+                ?>
             </tr>
+            <?php $firstRow = false; ?>
+            <?php endif; ?>
+            <?php if ($renderDesks && $nDesks === 0 && !$hasTable): // safety: office with neither desks nor a table ?>
+                <tr class="<?= $focusHide ?> room-start">
+                    <td class="col-office sticky-col <?= $tint ?>"><?= room_ident($room) ?></td>
+                    <td class="col-name sticky-col sticky-col-2 <?= $tint ?>"><span class="line-label">—</span></td>
+                    <?php if ($dayBlocked) { render_blocked_day($colsPerDay); } else { render_booking_disabled($days, $colsPerDay, $offMonth); } ?>
+                </tr>
             <?php endif; ?>
 
         <?php else: // M, F, T ?>
@@ -441,6 +520,10 @@ function render_blocked_day($colsPerDay)
                 <td class="col-office sticky-col <?= $tint ?>"><?= room_ident($room) ?></td>
                 <td class="col-name sticky-col sticky-col-2 <?= $tint ?>">
                     <span class="pictogram"><?= icon_for_room_line('room', $type) ?></span>
+                    <?php if (($type === 'M' || $type === 'F' || $type === 'T') && (int)$room['capacity'] > 0):
+                        $cap = (int)$room['capacity']; ?>
+                        <span class="line-label cap-label"><?= $cap ?> <?= $cap === 1 ? 'seat' : 'seats' ?></span>
+                    <?php endif; ?>
                 </td>
                 <?php if ($dayBlocked) { render_blocked_day($colsPerDay); } elseif ($hourly) { render_booking_cells($days, $roomId, $bookingMap); } else { render_booking_disabled($days, $colsPerDay, $offMonth); } ?>
             </tr>
@@ -482,6 +565,8 @@ window.TRACKER = {
     todayRef: <?= json_encode($todayStr) ?>,
     rangeStart: <?= json_encode($rangeStart) ?>,
     rangeEnd: <?= json_encode($rangeEnd) ?>,
+    confirmOcc: <?= get_flag($pdo, 'confirm_occ_booking', 1) === 1 ? 'true' : 'false' ?>,
+    focusMinimal: <?= $focusMinimal ? 'true' : 'false' ?>,
     revision: <?= (int)get_revision($pdo) ?>
 };
 </script>

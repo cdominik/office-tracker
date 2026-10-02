@@ -18,6 +18,69 @@
 
     const cells = Array.from(document.querySelectorAll('.cell'));
 
+    let openYear = null; // set by the year-planner module; lets the grid menu open it
+    let yearUndo = null, yearRedo = null; // planner undo/redo, driven from the main key handler
+
+    // ---- Shared right-click context menu ----
+    const ctxMenu = document.getElementById('ctxMenu');
+    function closeContextMenu() { if (ctxMenu) ctxMenu.hidden = true; }
+    // items: {header} | {sep} | {label, cls, onClick} | {row, buttons:[{label,cls,onClick}]}
+    function openContextMenu(x, y, items) {
+        if (!ctxMenu) return;
+        ctxMenu.innerHTML = '';
+        items.forEach((it) => {
+            if (it.sep) { const s = document.createElement('div'); s.className = 'cm-sep'; ctxMenu.appendChild(s); return; }
+            if (it.header) { const h = document.createElement('div'); h.className = 'cm-header'; h.textContent = it.header; ctxMenu.appendChild(h); return; }
+            if (it.row) {
+                const r = document.createElement('div'); r.className = 'cm-row';
+                const lab = document.createElement('span'); lab.className = 'cm-row-label'; lab.textContent = it.row; r.appendChild(lab);
+                it.buttons.forEach((b) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'cm-swatch ' + (b.cls || '');
+                    btn.textContent = b.label;
+                    btn.addEventListener('click', () => { closeContextMenu(); b.onClick(); });
+                    r.appendChild(btn);
+                });
+                ctxMenu.appendChild(r);
+                return;
+            }
+            if (it.btnrow) {
+                const r = document.createElement('div'); r.className = 'cm-btnrow';
+                it.buttons.forEach((b) => {
+                    const bt = document.createElement('button');
+                    bt.type = 'button';
+                    bt.className = b.cls;
+                    bt.textContent = b.label;
+                    bt.addEventListener('click', () => { closeContextMenu(); b.onClick(); });
+                    r.appendChild(bt);
+                });
+                ctxMenu.appendChild(r);
+                return;
+            }
+            const btn = document.createElement('button');
+            btn.className = 'cm-item ' + (it.cls || '');
+            if (it.symbol) {
+                const sym = document.createElement('span');
+                sym.className = 'cm-sym s-' + it.symbol;
+                btn.appendChild(sym);
+            }
+            btn.appendChild(document.createTextNode(it.label));
+            btn.addEventListener('click', () => { closeContextMenu(); it.onClick(); });
+            ctxMenu.appendChild(btn);
+        });
+        ctxMenu.hidden = false;
+        // keep on-screen
+        const w = ctxMenu.offsetWidth, h = ctxMenu.offsetHeight;
+        const px = Math.min(x, window.innerWidth - w - 8);
+        const py = Math.min(y, window.innerHeight - h - 8);
+        ctxMenu.style.left = Math.max(8, px) + 'px';
+        ctxMenu.style.top = Math.max(8, py) + 'px';
+    }
+    document.addEventListener('mousedown', (e) => { if (ctxMenu && !ctxMenu.hidden && !e.target.closest('.ctx-menu')) closeContextMenu(); });
+    document.addEventListener('keydown', (e) => { if (ctxMenu && !ctxMenu.hidden && e.key === 'Escape') closeContextMenu(); });
+    window.addEventListener('resize', closeContextMenu);
+    const isMouse = () => window.matchMedia('(pointer: fine)').matches;
+
     // Feed the 2nd-header-row offset to CSS (so it sticks just below the 1st header row).
     function setStickyOffsets() {
         const r1 = document.querySelector('.grid thead tr');
@@ -27,7 +90,47 @@
     window.addEventListener('load', setStickyOffsets);
     window.addEventListener('resize', setStickyOffsets);
 
-    // Admin-gate: clicking "Manage rooms & desks" asks for confirmation first, so a regular
+    // ---- Current-time line (day/week only, today's column, office hours 9:00–17:00) ----
+    const gridWrap = document.querySelector('.grid-wrap');
+    let nowLine = null;
+    if (gridWrap) {
+        nowLine = document.createElement('div');
+        nowLine.className = 'now-line';
+        gridWrap.appendChild(nowLine);
+    }
+    function positionNowLine() {
+        if (!nowLine || !gridWrap) return;
+        const hourly = document.body.classList.contains('view-day') || document.body.classList.contains('view-week');
+        const todayHdr = document.querySelector('.day-header.today-col');
+        const tbody = document.querySelector('.grid tbody');
+        if (!hourly || !todayHdr || !tbody) { nowLine.style.display = 'none'; return; }
+        const now = new Date();
+        const mins = now.getHours() * 60 + now.getMinutes() - 9 * 60; // minutes since 09:00
+        const total = 8 * 60;                                          // 09:00–17:00 span
+        if (mins < 0 || mins > total) { nowLine.style.display = 'none'; return; } // outside office hours
+        const gr = gridWrap.getBoundingClientRect();
+        const hr = todayHdr.getBoundingClientRect();
+        const tb = tbody.getBoundingClientRect();
+        // Content-space coordinates (so the line scrolls with the grid).
+        const x = (hr.left - gr.left + gridWrap.scrollLeft) + (mins / total) * hr.width;
+        nowLine.style.left = Math.round(x) + 'px';
+        nowLine.style.top = Math.round(tb.top - gr.top + gridWrap.scrollTop) + 'px';
+        nowLine.style.height = Math.round(tb.height) + 'px';
+        nowLine.style.display = 'block';
+    }
+    positionNowLine();
+    window.addEventListener('load', positionNowLine);
+    window.addEventListener('resize', positionNowLine);
+    setInterval(positionNowLine, 30000); // creep along as time passes
+    // Recompute when the grid's size changes for any reason — e.g. meeting-space focus hides rows.
+    if (window.ResizeObserver && gridWrap) {
+        const ro = new ResizeObserver(() => positionNowLine());
+        const tb = document.querySelector('.grid tbody');
+        if (tb) ro.observe(tb);
+        ro.observe(gridWrap);
+    }
+
+    // Admin-gate: clicking "Setup rooms" asks for confirmation first, so a regular
     // user doesn't wander into the setup page and change things by accident.
     (function adminGate() {
         const link = document.getElementById('adminLink');
@@ -308,17 +411,24 @@
         });
     }
 
-    // Double-offices toggle: collapse the DO rooms for a compact "find a room" overview.
+    // Meeting-space focus toggle: hide desk-only offices for a compact "find a room" overview.
     // Per-user (cookie); the body class is already set server-side so there's no flash.
     const doToggle = document.getElementById('doToggle');
     const doToast = document.getElementById('doToast');
     let doToastTimer = null;
     function applyHideDo(hide, save) {
+        // Minimal focus is rendered server-side (desks of tabled offices are omitted), so a user
+        // toggle reloads to re-render. The silent load-time call (save=false) never reloads.
+        if (save && window.TRACKER && window.TRACKER.focusMinimal) {
+            setCookie('op_hide_do', hide ? '1' : '', 365);
+            window.location.reload();
+            return;
+        }
         document.body.classList.toggle('hide-do', hide);
-        if (doToggle) doToggle.setAttribute('aria-pressed', String(!hide));
+        if (doToggle) doToggle.setAttribute('aria-pressed', String(hide));
         if (save) setCookie('op_hide_do', hide ? '1' : '', 365);
         if (save && doToast) {
-            doToast.textContent = hide ? 'Double offices hidden' : 'Double offices shown';
+            doToast.textContent = hide ? 'Meeting-space focus on' : 'Meeting-space focus off';
             doToast.classList.add('show');
             clearTimeout(doToastTimer);
             doToastTimer = setTimeout(() => doToast.classList.remove('show'), 1500);
@@ -328,8 +438,18 @@
         doToggle.addEventListener('click', () => applyHideDo(!document.body.classList.contains('hide-do'), true));
     }
 
-    // Mobile: a vertical two-finger pinch toggles the double offices. Pinch in (fingers move
-    // together) hides them; spread apart shows them. Only claims clearly-vertical pinches, so
+    // Hidden "show every room" override (Cmd/Ctrl+A): reloads with all visibility filters and the
+    // meeting-space-focus collapse bypassed, so an admin can see every room regardless of settings.
+    function toggleShowAll() {
+        const on = getCookie('op_showall') === '1';
+        setCookie('op_showall', on ? '' : '1', 365);
+        window.location.reload();
+    }
+    const showAllBadge = document.getElementById('showAllBadge');
+    if (showAllBadge) showAllBadge.addEventListener('click', toggleShowAll);
+
+    // Mobile: a vertical two-finger pinch toggles meeting-space focus. Pinch in (fingers move
+    // together) turns it on; spread apart turns it off. Only claims clearly-vertical pinches, so
     // ordinary (diagonal) pinch-zoom still works.
     (function verticalPinch() {
         let active = false, startSpread = 0, curSpread = 0;
@@ -353,11 +473,29 @@
             if (!active || e.touches.length >= 2) return;
             const delta = curSpread - startSpread;
             active = false;
-            if (Math.abs(delta) > 60) applyHideDo(delta < 0, true); // pinch-in hides, spread shows
+            if (Math.abs(delta) > 60) applyHideDo(delta < 0, true); // pinch-in = focus on, spread = off
         }, { passive: false });
     })();
 
     // Tap a booking slot: book it with your initials, or clear it if it already holds yours.
+    // Soft warning: booking an office's meeting table while that office is marked occupied.
+    // Shown as a small popover at the cell (not a top-of-window dialog). Controlled by an admin
+    // flag (window.TRACKER.confirmOcc). If confirmation isn't needed, `proceed` runs immediately.
+    function needOccConfirm(cell) {
+        return !!(window.TRACKER.confirmOcc && cell && cell.dataset.officeOcc === '1');
+    }
+    function requestOccBooking(cell, proceed) {
+        if (!needOccConfirm(cell)) { proceed(); return; }
+        const r = cell.getBoundingClientRect();
+        // Open on the next tick so the click/mousedown that triggered this doesn't immediately
+        // close the popover via the outside-click handler.
+        setTimeout(() => openContextMenu(r.left, r.bottom + 4, [
+            { header: 'Office marked occupied then' },
+            { label: 'Book anyway', cls: 'cm-primary', onClick: proceed },
+            { label: 'Cancel', onClick: () => {} },
+        ]), 0);
+    }
+
     function quickBook(cell) {
         if (editorInput) { const ec = editorInput.closest('.cell'); commitEditor(ec, null); }
         clearSelection();
@@ -372,9 +510,11 @@
         const before = cell.textContent;
         const current = cell.textContent.trim();
         if (current === '') {
-            cell.textContent = myInitials;
-            saveCellText(cell);
-            recordOp('text', [{ cell, from: before, to: cell.textContent }]);
+            requestOccBooking(cell, () => {
+                cell.textContent = myInitials;
+                saveCellText(cell);
+                recordOp('text', [{ cell, from: before, to: cell.textContent }]);
+            });
         } else if (current === myInitials) {
             cell.textContent = '';           // tapping your own booking clears it
             saveCellText(cell);
@@ -389,6 +529,7 @@
 
     cells.forEach((cell) => {
         cell.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // right-click is handled by the context menu; don't touch selection
             // Clicking another cell mid-edit should SAVE the typed text, not discard it.
             if (editorInput) {
                 const editing = editorInput.closest('.cell');
@@ -485,8 +626,15 @@
 
     document.addEventListener('keydown', (e) => {
         if (editorInput) return; // the inline editor handles its own keys
-
         const mod = e.metaKey || e.ctrlKey;
+        const yo = document.getElementById('yearOverlay');
+        if (yo && !yo.hidden) {
+            // Year planner is open: it owns the keyboard. Undo/redo are driven here so they
+            // don't depend on listener order; arrows/escape are handled by the planner itself.
+            if (mod && !e.altKey && (e.key === 'z' || e.key === 'Z')) { e.preventDefault(); if (e.shiftKey) { if (yearRedo) yearRedo(); } else if (yearUndo) yearUndo(); return; }
+            if (mod && !e.altKey && (e.key === 'y' || e.key === 'Y')) { e.preventDefault(); if (yearRedo) yearRedo(); return; }
+            return;
+        }
 
         // ---- Global shortcuts (Cmd on Mac / Ctrl elsewhere) ----
         // A few Cmd/Ctrl combos are hard-reserved by the browser and never reach the page
@@ -509,8 +657,10 @@
             if (k === '2' || e.code === 'Digit2') { e.preventDefault(); gotoView('week'); return; }
             if (k === '3' || e.code === 'Digit3') { e.preventDefault(); gotoView('month'); return; }
             if (k === '4' || e.code === 'Digit4') { e.preventDefault(); gotoView('monthx'); return; }
-            // Toggle the double-offices display (compact room overview).
+            // Toggle meeting-space focus (hide desk-only offices for a compact room overview).
             if (k === 'e') { e.preventDefault(); applyHideDo(!document.body.classList.contains('hide-do'), true); return; }
+            // Hidden: show every room regardless of settings.
+            if (k === 'a') { e.preventDefault(); toggleShowAll(); return; }
             // Today: Cmd/Ctrl+.  (Cmd/Ctrl+T is reserved by the browser and can't be caught).
             if (k === '.') { e.preventDefault(); gotoRef(window.TRACKER.todayRef); return; }
             // Prev / next period: Cmd/Ctrl + arrow.
@@ -650,6 +800,17 @@
             targets = Array.from(selected).filter((c) => c.dataset.kind === cell.dataset.kind);
             if (targets.length === 0) targets = [cell];
         }
+        // Soft warning when adding a booking to an occupied office's meeting table.
+        if (cell.dataset.kind === 'booking' && value.trim() !== '' && needOccConfirm(cell)) {
+            cell.textContent = editorPrevText; // keep the original until confirmed
+            requestOccBooking(cell, () => {
+                cell.textContent = value;
+                saveCellText(cell);
+                recordOp('text', [{ cell, from: editorPrevText, to: value }]);
+            });
+            return;
+        }
+
         const items = targets.map((c) => ({
             cell: c,
             from: (c === cell) ? editorPrevText : c.textContent, // edited cell's text was cleared on open
@@ -718,6 +879,7 @@
                 const groups = {};
                 op.items.forEach((it) => { (groups[it[key]] = groups[it[key]] || []).push(it.cell); });
                 Object.keys(groups).forEach((col) => saveBatchColor(groups[col], col));
+                op.items.forEach((it) => updateOfficeHint(it.cell));
             } else {
                 op.items.forEach((it) => { it.cell.textContent = it[key]; saveCellText(it.cell); });
             }
@@ -725,11 +887,18 @@
             restoring = false;
         }
     }
+    function reselectOp(op) {
+        clearSelection();
+        op.items.forEach((it) => { selected.add(it.cell); it.cell.classList.add('selected'); });
+        const first = op.items.length ? op.items[0].cell : null;
+        if (first) { anchorCell = first; setActive(first); first.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+    }
     function undo() {
         const op = undoStack.pop();
         if (!op) { showIndicator('Nothing to undo'); return; }
         redoStack.push(op);
         applyOp(op, 'from');
+        reselectOp(op);
         showIndicator('Undone');
     }
     function redo() {
@@ -737,6 +906,7 @@
         if (!op) { showIndicator('Nothing to redo'); return; }
         undoStack.push(op);
         applyOp(op, 'to');
+        reselectOp(op);
         showIndicator('Redone');
     }
 
@@ -762,11 +932,55 @@
         });
         saveBatchColor(deskCells, color);
         recordOp('color', items);
+        deskCells.forEach(updateOfficeHint); // live-refresh any office's meeting-table hint
 
         if (skipped > 0) {
             flashHint(skipped + ' meeting-room cell(s) in the selection were left untouched (they color automatically).');
         }
     }
+
+    // When an office desk half-day changes colour, refresh the matching meeting-table hours'
+    // occupied hint immediately (no reload needed).
+    function updateOfficeHint(cell) {
+        const room = cell.dataset.officeRoom;
+        if (!room) return;
+        const date = cell.dataset.date, period = cell.dataset.period;
+        // The table is hinted if ANY desk in this office is occupied (red) for this half-day.
+        let occ = false;
+        document.querySelectorAll('[data-kind="desk"][data-office-room="' + room + '"][data-date="' + date + '"][data-period="' + period + '"]')
+            .forEach((c) => { if (c.classList.contains('color-red')) occ = true; });
+        const hours = (period === 'am') ? [9, 10, 11, 12] : [13, 14, 15, 16];
+        hours.forEach((h) => {
+            const t = document.querySelector('[data-kind="booking"][data-room="' + room + '"][data-date="' + date + '"][data-hour="' + h + '"]');
+            if (!t) return;
+            t.classList.toggle('office-occ-hint', occ);
+            if (occ) t.dataset.officeOcc = '1'; else delete t.dataset.officeOcc;
+        });
+    }
+
+    // Right-click a desk cell → Free / Occ / Clear (+ open year planner). Selection-aware.
+    // On booking cells and elsewhere the native menu is left alone; on touch we just suppress it.
+    document.addEventListener('contextmenu', (e) => {
+        const cell = e.target.closest('.cell');
+        if (!cell || cell.dataset.kind !== 'desk') return; // native menu everywhere else
+        e.preventDefault();
+        if (!isMouse()) return; // touch: long-press already handles selection; no custom menu
+        if (!selected.has(cell)) selectSingle(cell); // right-clicking outside the selection targets that cell
+        const row = cell.closest('tr');
+        const nameCell = row ? row.querySelector('.desk-name-cell[data-desk]') : null;
+        const items = [
+            { btnrow: true, buttons: [
+                { label: 'Free', cls: 'color-btn color-green', onClick: () => applyColor('green') },
+                { label: 'Occ', cls: 'color-btn color-red', onClick: () => applyColor('red') },
+                { label: 'Clear', cls: 'color-btn color-clear', onClick: () => applyColor('none') },
+            ] },
+        ];
+        if (nameCell && openYear && isMouse()) {
+            items.push({ sep: true });
+            items.push({ label: 'Open year planner…', onClick: () => openYear(parseInt(nameCell.dataset.desk, 10), nameCell.dataset.deskName || 'Desk') });
+        }
+        openContextMenu(e.pageX, e.pageY, items);
+    });
 
     document.querySelectorAll('.color-btn').forEach((btn) => {
         btn.addEventListener('click', () => applyColor(btn.dataset.color));
@@ -774,7 +988,7 @@
 
     // Click outside the grid clears selection
     document.addEventListener('mousedown', (e) => {
-        if (!e.target.closest('.grid') && !e.target.closest('.toolbar') && !e.target.closest('.select-bar')) {
+        if (!e.target.closest('.grid') && !e.target.closest('.toolbar') && !e.target.closest('.select-bar') && !e.target.closest('.ctx-menu')) {
             if (touchSelectMode) { exitSelectMode(); return; }
             clearSelection();
             setActive(null);
@@ -820,6 +1034,7 @@
                         cell.classList.remove('color-green', 'color-red');
                         if (color === 'green') cell.classList.add('color-green');
                         else if (color === 'red') cell.classList.add('color-red');
+                        if (cell.dataset.officeRoom) updateOfficeHint(cell); // refresh meeting-table hint from others' changes
                     } else if (cell.dataset.kind === 'booking') {
                         const b = bookMap[cell.dataset.room + '|' + cell.dataset.date + '|' + cell.dataset.hour];
                         const text = b ? b.text : '';
@@ -1014,4 +1229,299 @@
             }, { passive: false });
         }
     }
+
+    // ---- Per-desk year planner (double-click a desk name; desktop only) ----
+    (function yearPlanner() {
+        const overlay = document.getElementById('yearOverlay');
+        const grid = document.getElementById('yearGrid');
+        if (!overlay || !grid) return;
+        const titleEl = document.getElementById('yearTitle');
+        const labelEl = document.getElementById('yearLabel');
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+        let deskId = 0, deskName = '', year = new Date().getFullYear();
+        let dayAM = {}, dayPM = {};   // 'YYYY-MM-DD' -> 'green' | 'red' | undefined (per half-day)
+        let cellByDate = {};          // date -> the .yr-day element
+        let selecting = false, dragged = false, anchorDate = null;
+        const selected = new Set();
+
+        const iso = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const isWeekend = (d) => { const g = d.getDay(); return g === 0 || g === 6; };
+        function stateOf(date) {
+            const a = dayAM[date] || 'none', p = dayPM[date] || 'none';
+            if (a === 'none' && p === 'none') return undefined;
+            return (a === p) ? a : 'mixed';
+        }
+
+        function open(id, name) {
+            deskId = id; deskName = name;
+            year = new Date().getFullYear();
+            load();
+            overlay.hidden = false;
+        }
+        function close() { overlay.hidden = true; selected.clear(); }
+
+        function load() {
+            titleEl.textContent = deskName;
+            labelEl.textContent = year;
+            yUndo.length = 0; yRedo.length = 0; // undo history is per desk+year
+            grid.innerHTML = '<div class="year-loading">Loading…</div>';
+            fetch('api/desk_year.php?desk_id=' + deskId + '&year=' + year)
+                .then((r) => { if (r.status === 401) { window.location = 'login.php'; return null; } return r.json(); })
+                .then((data) => {
+                    if (!data || !data.ok) { grid.innerHTML = '<div class="year-loading">Could not load.</div>'; return; }
+                    dayAM = {}; dayPM = {};
+                    Object.keys(data.days).forEach((date) => {
+                        const p = data.days[date];
+                        if (p.am && p.am !== 'none') dayAM[date] = p.am;
+                        if (p.pm && p.pm !== 'none') dayPM[date] = p.pm;
+                    });
+                    render();
+                })
+                .catch(() => { grid.innerHTML = '<div class="year-loading">Could not load.</div>'; });
+        }
+
+        function render() {
+            grid.innerHTML = '';
+            cellByDate = {};
+            selected.clear();
+            for (let m = 0; m < 12; m++) grid.appendChild(renderMonth(m));
+        }
+
+        function renderMonth(m) {
+            const wrap = document.createElement('div');
+            wrap.className = 'yr-month';
+            const h = document.createElement('div');
+            h.className = 'yr-month-name';
+            h.textContent = MONTHS[m];
+            wrap.appendChild(h);
+
+            const table = document.createElement('div');
+            table.className = 'yr-days';
+            const first = new Date(year, m, 1);
+            const lead = (first.getDay() + 6) % 7; // 0 = Monday
+            for (let i = 0; i < lead; i++) {
+                const b = document.createElement('span'); b.className = 'yr-day yr-blank';
+                table.appendChild(b);
+            }
+            const daysInMonth = new Date(year, m + 1, 0).getDate();
+            for (let dnum = 1; dnum <= daysInMonth; dnum++) {
+                const d = new Date(year, m, dnum);
+                const date = iso(d);
+                const cell = document.createElement('span');
+                cell.className = 'yr-day';
+                cell.textContent = dnum;
+                cell.dataset.date = date;
+                if (isWeekend(d)) {
+                    cell.classList.add('yr-weekend');
+                } else {
+                    applyStateClass(cell, stateOf(date));
+                    cellByDate[date] = cell;
+                }
+                table.appendChild(cell);
+            }
+            wrap.appendChild(table);
+            return wrap;
+        }
+
+        function applyStateClass(cell, state) {
+            cell.classList.remove('st-green', 'st-red', 'st-mixed');
+            if (state === 'green') cell.classList.add('st-green');
+            else if (state === 'red') cell.classList.add('st-red');
+            else if (state === 'mixed') cell.classList.add('st-mixed');
+        }
+
+        function postColor(cells, color) {
+            if (!cells.length) return;
+            fetch('api/save_batch_color.php', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cells: cells, color: color }),
+            }).then((r) => { if (r.status === 401) window.location = 'login.php'; });
+        }
+
+        // ---- Undo / redo (per open desk+year; cleared when either changes) ----
+        const yUndo = [], yRedo = [];
+        let yRestoring = false;
+        function snap(date) { return { date: date, am: dayAM[date], pm: dayPM[date] }; }
+        // Persist only the periods that actually changed between before[] and after[].
+        function saveDiff(before, after) {
+            const amG = {}, pmG = {};
+            after.forEach((a, i) => {
+                const bfr = before[i];
+                if (a.am !== bfr.am) { const c = a.am || 'none'; (amG[c] = amG[c] || []).push(a.date); }
+                if (a.pm !== bfr.pm) { const c = a.pm || 'none'; (pmG[c] = pmG[c] || []).push(a.date); }
+            });
+            let any = false;
+            Object.keys(amG).forEach((c) => { any = true; postColor(amG[c].map((d) => ({ desk_id: deskId, date: d, period: 'am' })), c); });
+            Object.keys(pmG).forEach((c) => { any = true; postColor(pmG[c].map((d) => ({ desk_id: deskId, date: d, period: 'pm' })), c); });
+            if (any) showIndicator('Saved');
+        }
+        // compute(date) -> {am, pm} target state (value or undefined). Records an undo op.
+        function writeDates(dates, compute) {
+            if (!dates.length) return;
+            const before = dates.map(snap);
+            const after = dates.map((date) => {
+                const t = compute(date);
+                dayAM[date] = t.am; dayPM[date] = t.pm;
+                if (cellByDate[date]) applyStateClass(cellByDate[date], stateOf(date));
+                return { date: date, am: t.am, pm: t.pm };
+            });
+            saveDiff(before, after);
+            if (!yRestoring) {
+                const changed = after.filter((a, i) => a.am !== before[i].am || a.pm !== before[i].pm);
+                if (changed.length) {
+                    const idx = new Set(changed.map((c) => c.date));
+                    yUndo.push({ before: before.filter((b) => idx.has(b.date)), after: changed });
+                    yRedo.length = 0;
+                }
+            }
+        }
+        function applyStates(states) { // states: [{date, am, pm}]
+            yRestoring = true;
+            writeDates(states.map((s) => s.date), (date) => {
+                const s = states.find((x) => x.date === date);
+                return { am: s.am, pm: s.pm };
+            });
+            yRestoring = false;
+        }
+        function yUndoFn() {
+            const op = yUndo.pop();
+            if (!op) { showIndicator('Nothing to undo'); return; }
+            yRedo.push(op);
+            applyStates(op.before);
+            reselectDates(op.before.map((x) => x.date));
+            showIndicator('Undone');
+        }
+        function yRedoFn() {
+            const op = yRedo.pop();
+            if (!op) { showIndicator('Nothing to redo'); return; }
+            yUndo.push(op);
+            applyStates(op.after);
+            reselectDates(op.after.map((x) => x.date));
+            showIndicator('Redone');
+        }
+
+        // Apply a colour to a set of dates. scope: 'day' | 'am' | 'pm'.
+        function applyToDates(dates, scope, color) {
+            const v = (color === 'none') ? undefined : color;
+            writeDates(dates, (date) => ({
+                am: (scope === 'day' || scope === 'am') ? v : dayAM[date],
+                pm: (scope === 'day' || scope === 'pm') ? v : dayPM[date],
+            }));
+        }
+        // Set AM and PM to (possibly different) colours — for split days.
+        function setDay(dates, amColor, pmColor) {
+            writeDates(dates, () => ({
+                am: (amColor === 'none') ? undefined : amColor,
+                pm: (pmColor === 'none') ? undefined : pmColor,
+            }));
+        }
+
+        function clearSel() {
+            selected.forEach((date) => { if (cellByDate[date]) cellByDate[date].classList.remove('yr-sel'); });
+            selected.clear();
+        }
+        function reselectDates(dates) {
+            clearSel();
+            let firstCell = null;
+            dates.forEach((date) => {
+                const c = cellByDate[date];
+                if (c) { selected.add(date); c.classList.add('yr-sel'); if (!firstCell) firstCell = c; }
+            });
+            if (firstCell) firstCell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+        function selectRange(a, b) {
+            clearSel();
+            let da = new Date(a + 'T00:00:00'), db = new Date(b + 'T00:00:00');
+            if (da > db) { const t = da; da = db; db = t; }
+            const cur = new Date(da);
+            while (cur <= db) {
+                if (!isWeekend(cur)) {
+                    const date = iso(cur);
+                    if (cellByDate[date]) { selected.add(date); cellByDate[date].classList.add('yr-sel'); }
+                }
+                cur.setDate(cur.getDate() + 1);
+            }
+        }
+        function cycle(date) {
+            const s = stateOf(date);
+            const next = (!s) ? 'red' : (s === 'red') ? 'green' : 'none'; // occ → free → clear
+            applyToDates([date], 'day', next);
+        }
+
+        grid.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // ignore right-click here (handled by contextmenu)
+            const cell = e.target.closest('.yr-day');
+            if (!cell || cell.classList.contains('yr-weekend') || cell.classList.contains('yr-blank')) return;
+            e.preventDefault();
+            const date = cell.dataset.date;
+            if (e.shiftKey && anchorDate) { selectRange(anchorDate, date); return; }
+            selecting = true; dragged = false; anchorDate = date;
+            clearSel();
+        });
+        grid.addEventListener('mouseover', (e) => {
+            if (!selecting) return;
+            const cell = e.target.closest('.yr-day');
+            if (!cell || !cell.dataset.date) return;
+            dragged = true;
+            selectRange(anchorDate, cell.dataset.date);
+        });
+        document.addEventListener('mouseup', () => {
+            if (!selecting) return;
+            selecting = false;
+            if (!dragged) { clearSel(); cycle(anchorDate); } // a plain click cycles the day
+        });
+
+        // Right-click a day → four clear whole-day options with colour symbols.
+        grid.addEventListener('contextmenu', (e) => {
+            const cell = e.target.closest('.yr-day');
+            if (!cell || cell.classList.contains('yr-weekend') || cell.classList.contains('yr-blank')) return;
+            e.preventDefault();
+            const date = cell.dataset.date;
+            const targets = (selected.size && selected.has(date)) ? [...selected] : [date];
+            const label = targets.length > 1 ? (targets.length + ' days') : date;
+            openContextMenu(e.pageX, e.pageY, [
+                { header: label },
+                { symbol: 'occ', label: 'Occupied', onClick: () => setDay(targets, 'red', 'red') },
+                { symbol: 'free', label: 'Free', onClick: () => setDay(targets, 'green', 'green') },
+                { symbol: 'amfree', label: 'Morning free (afternoon occ)', onClick: () => setDay(targets, 'green', 'red') },
+                { symbol: 'pmfree', label: 'Afternoon free (morning occ)', onClick: () => setDay(targets, 'red', 'green') },
+                { sep: true },
+                { symbol: 'clear', label: 'Clear', onClick: () => setDay(targets, 'none', 'none') },
+            ]);
+        });
+
+        document.getElementById('yearFree').addEventListener('click', () => { applyToDates([...selected], 'day', 'green'); });
+        document.getElementById('yearOcc').addEventListener('click', () => { applyToDates([...selected], 'day', 'red'); });
+        document.getElementById('yearClear').addEventListener('click', () => { applyToDates([...selected], 'day', 'none'); });
+        document.getElementById('yearPrev').addEventListener('click', () => { year--; load(); });
+        document.getElementById('yearNext').addEventListener('click', () => { year++; load(); });
+        document.getElementById('yearClose').addEventListener('click', close);
+        overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', (e) => {
+            if (overlay.hidden) return;
+            if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+            const mod = e.metaKey || e.ctrlKey;
+            if (mod && e.key === 'ArrowLeft') { e.preventDefault(); year--; load(); }
+            else if (mod && e.key === 'ArrowRight') { e.preventDefault(); year++; load(); }
+        });
+
+        openYear = open; // let the grid context menu open this
+        yearUndo = yUndoFn; yearRedo = yRedoFn; // let the main key handler drive undo/redo
+
+        // Triggers: double-click a desk name, or click its 12-dot icon — desktop only.
+        const isDesktop = () => window.matchMedia('(pointer: fine)').matches && window.innerWidth >= 760;
+        document.querySelectorAll('.desk-name-cell[data-desk]').forEach((td) => {
+            td.addEventListener('dblclick', () => {
+                if (!isDesktop()) return;
+                open(parseInt(td.dataset.desk, 10), td.dataset.deskName || 'Desk');
+            });
+            const icon = td.querySelector('.year-open');
+            if (icon) icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (!isDesktop()) return;
+                open(parseInt(td.dataset.desk, 10), td.dataset.deskName || 'Desk');
+            });
+        });
+    })();
 })();

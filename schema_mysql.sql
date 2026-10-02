@@ -7,15 +7,17 @@ USE office_tracker;
 CREATE TABLE rooms (
     id INT AUTO_INCREMENT PRIMARY KEY,
     room_number VARCHAR(50) NOT NULL,
-    room_type VARCHAR(5) NOT NULL,      -- DO, SO, M, F, T
-    capacity INT NULL,
-    sort_order INT DEFAULT 0
+    room_type VARCHAR(5) NOT NULL,      -- offices: DO, SO, LO (shown as O), EC; bookable: M, F, T
+    capacity INT NULL,                  -- used by M/F/T (shown next to the name)
+    sort_order INT DEFAULT 0,
+    visible TINYINT NOT NULL DEFAULT 1, -- per-room show/hide
+    has_table TINYINT NOT NULL DEFAULT 0 -- office has a bookable meeting table (offices only)
 ) ENGINE=InnoDB;
 
 CREATE TABLE desks (
     id INT AUTO_INCREMENT PRIMARY KEY,
     room_id INT NOT NULL,
-    seat_index INT NOT NULL DEFAULT 0,  -- 0 or 1 within a room
+    seat_index INT NOT NULL DEFAULT 0,  -- 0-based position within a room
     name VARCHAR(150) DEFAULT '',
     FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
