@@ -1330,3 +1330,6 @@ body.hide-do .do-disc .mtg-icon { color: #fff; }
 .admin-section.sec-danger   { background: color-mix(in srgb, var(--red-border) 10%, var(--page-bg)); border-color: var(--red-border); }
 .admin-section.sec-danger .admin-section-title { color: var(--red-text); }
 html.theme-dark .admin-section.sec-danger .admin-section-title { color: #f3b0b0; }
+
+/* Inline key hint in admin notes */
+.admin-note kbd { font-family: inherit; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 5px; }

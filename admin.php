@@ -272,6 +272,7 @@ $typeNames = [
 
         </div>
         <p class="admin-note">Unchecking a type hides those rooms from the tracker grid. Their data is kept and reappears when you re-enable the type. (Reopen the tracker to see the change.)</p>
+        <p class="admin-note"><b>Tip:</b> on the tracker, press <kbd>⌘/Ctrl+A</kbd> to preview <em>every</em> room at once — ignoring these type toggles, the per-room "Show" checkboxes, and meeting-space focus. Press it again (or click the "Showing all rooms" badge) to return to the normal view.</p>
     </div>
 
     <div class="admin-office-card visibility-card">
