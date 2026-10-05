@@ -188,6 +188,7 @@
     let editorInput = null;
     let editorPrevText = ''; // text a cell held before its editor opened (for undo)
     let touchSelectMode = false; // mobile long-press multi-select mode
+    const planMode = !!(window.TRACKER && window.TRACKER.view === 'room'); // 3-month room planner
     let currentRevision = (window.TRACKER && typeof window.TRACKER.revision !== 'undefined')
         ? window.TRACKER.revision : null;
 
@@ -290,6 +291,8 @@
 
     function saveCellText(cell) {
         const text = cell.textContent;
+        // Keep the hover tooltip's text current for edits made this session (not just on reload/poll).
+        if (text !== '') cell.dataset.tip = text; else delete cell.dataset.tip;
         if (cell.dataset.kind === 'desk') {
             fetch('api/save_desk_cell.php', {
                 method: 'POST',
@@ -539,7 +542,8 @@
             // One-tap booking: a plain click on a meeting-room / table slot inserts your
             // initials (or clears them if the slot already holds yours). Desk cells and
             // modifier-clicks fall through to normal selection.
-            if (cell.dataset.kind === 'booking' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+            // (In the room planner a plain click selects instead, so slots can be dragged over.)
+            if (cell.dataset.kind === 'booking' && !planMode && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                 quickBook(cell);
                 return;
             }
@@ -571,7 +575,7 @@
             isDragging = true;
             dragKey = cell.dataset.rowKey;
             dragAnchorIndex = indexInRow(cell);
-            selectSingle(cell);
+            selectSingle(cell); // also sets the anchor used by the planner's rectangular drag
         });
 
         cell.addEventListener('dblclick', () => {
@@ -584,7 +588,9 @@
         const el = document.elementFromPoint(e.clientX, e.clientY);
         if (!el) return;
         const cell = el.closest('.cell');
-        if (!cell || cell.dataset.rowKey !== dragKey) return;
+        if (!cell) return;
+        if (planMode) { selectRectTo(cell); return; } // room planner: rectangle across weeks
+        if (cell.dataset.rowKey !== dragKey) return;
         const idx = indexInRow(cell);
         selectRangeInRow(dragKey, dragAnchorIndex, idx);
         setActive(rowsByKey[dragKey][dragAnchorIndex]);
@@ -601,7 +607,8 @@
     }
     function gotoRef(ref) {
         // Staying in the same view (incl. monthx) is carried in the view itself.
-        window.location = '?view=' + encodeURIComponent(window.TRACKER.view) + '&ref=' + encodeURIComponent(ref);
+        const room = window.TRACKER.room ? '&room=' + encodeURIComponent(window.TRACKER.room) : '';
+        window.location = '?view=' + encodeURIComponent(window.TRACKER.view) + room + '&ref=' + encodeURIComponent(ref);
     }
     function pageScroll(dir) {
         const gw = document.querySelector('.grid-wrap');
@@ -658,7 +665,7 @@
             if (k === '3' || e.code === 'Digit3') { e.preventDefault(); gotoView('month'); return; }
             if (k === '4' || e.code === 'Digit4') { e.preventDefault(); gotoView('monthx'); return; }
             // Toggle meeting-space focus (hide desk-only offices for a compact room overview).
-            if (k === 'e') { e.preventDefault(); applyHideDo(!document.body.classList.contains('hide-do'), true); return; }
+            if (k === 'e') { e.preventDefault(); if (!planMode) applyHideDo(!document.body.classList.contains('hide-do'), true); return; }
             // Hidden: show every room regardless of settings.
             if (k === 'a') { e.preventDefault(); toggleShowAll(); return; }
             // Today: Cmd/Ctrl+.  (Cmd/Ctrl+T is reserved by the browser and can't be caught).
@@ -801,12 +808,13 @@
             if (targets.length === 0) targets = [cell];
         }
         // Soft warning when adding a booking to an occupied office's meeting table.
-        if (cell.dataset.kind === 'booking' && value.trim() !== '' && needOccConfirm(cell)) {
-            cell.textContent = editorPrevText; // keep the original until confirmed
-            requestOccBooking(cell, () => {
-                cell.textContent = value;
-                saveCellText(cell);
-                recordOp('text', [{ cell, from: editorPrevText, to: value }]);
+        if (cell.dataset.kind === 'booking' && value.trim() !== '' && targets.some((c) => needOccConfirm(c))) {
+            const prev = editorPrevText;
+            cell.textContent = prev; // keep the original until confirmed
+            requestOccBooking(targets.find((c) => needOccConfirm(c)), () => {
+                const its = targets.map((c) => ({ cell: c, from: (c === cell) ? prev : c.textContent, to: value }));
+                targets.forEach((c) => { c.textContent = value; saveCellText(c); });
+                recordOp('text', its);
             });
             return;
         }
@@ -1031,6 +1039,7 @@
                         const text = d ? d.text : '';
                         const color = d ? d.color : 'none';
                         if (cell.textContent !== text) cell.textContent = text;
+                        if (text !== '') cell.dataset.tip = text; else delete cell.dataset.tip;
                         cell.classList.remove('color-green', 'color-red');
                         if (color === 'green') cell.classList.add('color-green');
                         else if (color === 'red') cell.classList.add('color-red');
@@ -1039,6 +1048,7 @@
                         const b = bookMap[cell.dataset.room + '|' + cell.dataset.date + '|' + cell.dataset.hour];
                         const text = b ? b.text : '';
                         if (cell.textContent !== text) cell.textContent = text;
+                        if (text !== '') cell.dataset.tip = text; else delete cell.dataset.tip; // keep hover tooltip fresh
                         cell.classList.toggle('color-red', text.trim() !== '');
                     }
                 });
@@ -1083,6 +1093,41 @@
     });
 
     setInterval(pollTick, POLL_MS);
+
+    // ---- Instant hover tooltip for clipped cell text (anything carrying data-tip) ----
+    (function cellTooltip() {
+        const tip = document.createElement('div');
+        tip.className = 'cell-tip';
+        tip.hidden = true;
+        document.body.appendChild(tip);
+        let shownFor = null;
+        function place(el) {
+            const r = el.getBoundingClientRect();
+            const w = tip.offsetWidth, h = tip.offsetHeight;
+            let left = Math.min(window.innerWidth - w - 8, Math.max(8, r.left));
+            let top = r.top - h - 6;                 // prefer above the cell
+            if (top < 6) top = r.bottom + 6;         // flip below if no room
+            tip.style.left = Math.round(left) + 'px';
+            tip.style.top = Math.round(top) + 'px';
+        }
+        function show(el) {
+            const text = el.getAttribute('data-tip');
+            if (!text) { hide(); return; }
+            tip.textContent = text;
+            tip.hidden = false;
+            shownFor = el;
+            place(el);
+        }
+        function hide() { if (!tip.hidden) { tip.hidden = true; shownFor = null; } }
+        const isClipped = (el) => el.scrollWidth > el.clientWidth + 1; // only tip when text doesn't fit
+        document.addEventListener('mouseover', (e) => {
+            const el = e.target.closest('[data-tip]');
+            if (el && el.getAttribute('data-tip') && isClipped(el)) { if (el !== shownFor) show(el); }
+            else hide();
+        });
+        document.addEventListener('mousedown', hide); // get out of the way when editing/selecting
+        window.addEventListener('scroll', hide, true);
+    })();
 
     // ---- Touch long-press multi-select (mobile) ----
     // Long-press a desk cell to enter selection mode; then tap desk cells to add/remove.
@@ -1259,7 +1304,11 @@
             load();
             overlay.hidden = false;
         }
-        function close() { overlay.hidden = true; selected.clear(); }
+        function close() {
+            overlay.hidden = true;
+            selected.clear();
+            refreshCells(); // repaint the grid behind so planner edits show immediately (not only on next poll/nav)
+        }
 
         function load() {
             titleEl.textContent = deskName;
@@ -1304,6 +1353,7 @@
                 const b = document.createElement('span'); b.className = 'yr-day yr-blank';
                 table.appendChild(b);
             }
+            const todayIso = iso(new Date()); // only matches a cell when the shown year is the current one
             const daysInMonth = new Date(year, m + 1, 0).getDate();
             for (let dnum = 1; dnum <= daysInMonth; dnum++) {
                 const d = new Date(year, m, dnum);
@@ -1312,6 +1362,7 @@
                 cell.className = 'yr-day';
                 cell.textContent = dnum;
                 cell.dataset.date = date;
+                if (date === todayIso) cell.classList.add('yr-today');
                 if (isWeekend(d)) {
                     cell.classList.add('yr-weekend');
                 } else {
@@ -1521,6 +1572,20 @@
                 e.stopPropagation();
                 if (!isDesktop()) return;
                 open(parseInt(td.dataset.desk, 10), td.dataset.deskName || 'Desk');
+            });
+        });
+
+        // 3-month room planner: double-click a bookable room's name, or click its icon — desktop only.
+        const openPlan = (roomId) => {
+            window.location = '?view=room&room=' + encodeURIComponent(roomId)
+                + '&ref=' + encodeURIComponent(window.TRACKER.ref);
+        };
+        document.querySelectorAll('.room-name-cell[data-room]').forEach((td) => {
+            td.addEventListener('dblclick', () => { if (isDesktop()) openPlan(td.dataset.room); });
+            const icon = td.querySelector('.plan-open');
+            if (icon) icon.addEventListener('click', (e) => {
+                e.stopPropagation();
+                if (isDesktop()) openPlan(td.dataset.room);
             });
         });
     })();

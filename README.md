@@ -90,6 +90,17 @@ Notes:
   closes, and **⌘/Ctrl+Z / Shift+Z** undo/redo within the planner. It sets whole days (both AM and PM)
   and saves through the same storage, so it stays in sync with the grid; a day set to different AM/PM
   colours in the grid shows as a split (mixed) cell.
+- On a desktop, **double-click a bookable room's name** — an M/F/T room or an office's meeting-table
+  row — or click the small icon after it (three stacked bars crossed by a column) to open its **3-month
+  room planner**: 13 weeks stacked one per row, each laid out like that room's row in Week view
+  (Mon–Fri, 9–16). The same slot in consecutive weeks lines up vertically, so a repeated meeting is
+  one drag: **click or drag to select** (dragging selects a rectangle, e.g. straight down a column for
+  "every Tuesday 10:00"), **⌘/Ctrl-click** to add single slots (e.g. every other week), then **type**
+  and press **Enter** to fill them all; **Delete** clears. A plain click selects rather than one-tap
+  booking, so slots can be dragged over. Today's slots have a thick blue frame and the current week's
+  label is blue. ← / → move four weeks at a time; **Back to grid** returns to Week view. Saving, undo
+  /redo, the long-text tooltip, live refresh, and the occupied-office hint work exactly as in the grid.
+- Both planner icons are desktop-only: they're hidden on narrow screens and touch devices.
 - **⌘/Ctrl+↑ / ↓** scroll the page up/down when the table is taller than the window.
 - Everything saves automatically (no save button); a small "Saved" indicator appears bottom-right.
 
@@ -268,7 +279,8 @@ exposed (nginx without a rule) — apply option 1 or 2.
 ```
 config.php                     Passwords (top) + DB connection/schema/migration/seed, backups,
                                auth helpers; BOOKING_HOURS constant (9–16)
-index.php                      The grid (day/week/month/+month+), all room types, current-time line
+index.php                      The grid (day/week/month/+month+), all room types, current-time line,
+                               and the 3-month room planner (view=room)
 admin.php                      Setup rooms (Settings / Rooms / Danger-zone sections)
 login.php                      Shared-password sign-in (tracker and setup passwords)
 backup.php                     Optional cron entry point for scheduled backups

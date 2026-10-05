@@ -1159,6 +1159,13 @@ body.hide-do .do-disc .mtg-icon { color: #fff; }
 .yr-day.st-red { background: var(--red-bg); border-color: var(--red-border); color: var(--red-text); }
 .yr-day.st-mixed { background: linear-gradient(135deg, var(--green-bg) 0 50%, var(--red-bg) 50% 100%); }
 .yr-day.yr-sel { box-shadow: inset 0 0 0 2px var(--accent); }
+/* Today locator — a THICK accent frame (clearly thicker than the 2px selection outline) plus a blue
+   number. No fill, so it never conflicts with the free/occ cell colours in any theme or palette. */
+.yr-day.yr-today {
+    box-shadow: inset 0 0 0 3px var(--accent);
+    color: var(--accent);
+    font-weight: 800;
+}
 
 @media (max-width: 900px) {
     .year-grid { grid-template-columns: repeat(3, 1fr); }
@@ -1333,3 +1340,56 @@ html.theme-dark .admin-section.sec-danger .admin-section-title { color: #f3b0b0;
 
 /* Inline key hint in admin notes */
 .admin-note kbd { font-family: inherit; font-size: 11px; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: 4px; padding: 0 5px; }
+
+/* Instant hover tooltip for clipped cell text (full desk name / booking label / presence note) */
+.cell-tip {
+    position: fixed;
+    z-index: 400;
+    max-width: 280px;
+    background: #22262e;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 12px;
+    line-height: 1.35;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.3);
+    pointer-events: none;
+    white-space: normal;
+}
+.cell-tip[hidden] { display: none; }
+
+/* ---- 3-month room planner (view=room): stacked weeks for one bookable room ---- */
+body.view-room .col-hour { width: auto; }          /* 40 slots share the width, like week view */
+body.view-room .col-name { width: 130px; }
+@media (max-width: 1200px) { body.view-room .hour-label { font-size: 9.5px; } body.view-room .cell { font-size: 11px; } }
+@media (max-width: 1000px) { body.view-room .hour-label { font-size: 8.5px; } body.view-room .cell { font-size: 10px; } }
+/* The desk-only toolbar controls don't apply here. */
+body.view-room .toolbar .toolbar-label,
+body.view-room .toolbar .color-btn,
+body.view-room .toolbar .you-chip,
+body.view-room .toolbar .do-wrap { display: none; }
+.rp-title { display: inline-flex; align-items: baseline; gap: 8px; font-weight: 700; color: var(--header-text); white-space: nowrap; }
+.rp-title .rp-type { font-weight: 500; font-size: 12.5px; color: var(--text-muted); }
+.rp-week, .rp-dates { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+.rp-this-week .rp-week, .rp-this-week .rp-dates { color: var(--accent); font-weight: 700; }
+/* Today: a thick accent frame round the day's slots (no fill — never clashes with bookings). */
+.cell.rp-today::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-top: 3px solid var(--accent);
+    border-bottom: 3px solid var(--accent);
+    pointer-events: none;
+}
+.cell.rp-today-start::after { border-left: 3px solid var(--accent); }
+.cell.rp-today-end::after { border-right: 3px solid var(--accent); }
+
+/* Room-name cells open the room planner (desktop); reuse the year-planner icon styling. */
+.room-name-cell[data-room] { cursor: default; }
+.room-name-cell:hover .year-open { opacity: 1; }
+
+/* Both planner icons are desktop-only: hide on narrow screens and touch devices. */
+@media (max-width: 759px), (pointer: coarse) {
+    .year-open { display: none; }
+}
