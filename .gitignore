@@ -6,3 +6,6 @@
 Thumbs.db
 *~
 *.swp
+
+# Claude WhatsApp plugin state (session credentials, message DB) — never commit.
+/.whatsapp/
