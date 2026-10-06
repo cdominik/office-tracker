@@ -419,7 +419,7 @@ $navRoom = ($view === 'room') ? '&room=' . (int)$planRoom['id'] : ''; // keep th
                 <span class="year-label" id="yearLabel">—</span>
                 <button type="button" class="btn btn-small" id="yearNext" title="Next year (⌘/Ctrl+→)">&rarr;</button>
             </span>
-            <button type="button" class="btn btn-small year-close" id="yearClose" title="Close (Esc)">&times;</button>
+            <button type="button" class="btn btn-small year-close" id="yearClose" title="Close (Esc — first Esc clears a selection)">&times;</button>
         </div>
         <p class="year-hint">Click a weekday to cycle occ → free → clear. Drag or Shift-click to select a range, then Free / Occ / Clear. Right-click for occ / free / half-day options. Weekends are greyed.</p>
         <div class="year-grid" id="yearGrid"></div>
@@ -436,7 +436,7 @@ $navRoom = ($view === 'room') ? '&room=' . (int)$planRoom['id'] : ''; // keep th
     <div class="range-label"><span><?= h($rangeLabel) ?></span></div>
     <?php if ($view === 'room'): ?>
     <div class="view-group">
-        <a class="btn" href="?view=week&ref=<?= h($ref->format('Y-m-d')) ?>" title="Back to the grid (week view)">&larr; Back to grid</a>
+        <a class="btn year-close plan-close" id="planClose" href="?view=week&ref=<?= h($ref->format('Y-m-d')) ?>" title="Close — back to the grid (Esc; first Esc clears a selection)" aria-label="Close">&times;</a>
     </div>
     <?php else: ?>
     <div class="view-group">
@@ -462,7 +462,7 @@ $navRoom = ($view === 'room') ? '&room=' . (int)$planRoom['id'] : ''; // keep th
         <button type="button" class="do-disc" id="doToggle" title="Focus the view on finding a meeting space — hides the desk offices (⌘/Ctrl+E; pinch vertically on mobile)" aria-label="Focus on meeting space" aria-pressed="false"><svg class="mtg-icon" viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><circle cx="12" cy="12" r="4.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="3.4" r="1.8"/><circle cx="19.4" cy="7.7" r="1.8"/><circle cx="19.4" cy="16.3" r="1.8"/><circle cx="12" cy="20.6" r="1.8"/><circle cx="4.6" cy="16.3" r="1.8"/><circle cx="4.6" cy="7.7" r="1.8"/></svg></button>
         <span class="palette-toast" id="doToast" role="status"></span>
     </span>
-    <span class="toolbar-hint" id="toolbarHint"><?php if ($view === 'room'): ?>Click or drag to select slots — drag down a column for the same slot every week; ⌘/Ctrl-click adds single slots. Then type (e.g. initials) and press Enter to fill them all. Delete clears.<?php else: ?>Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.<?php endif; ?></span>
+    <span class="toolbar-hint" id="toolbarHint"><?php if ($view === 'room'): ?>Click or drag to select slots — drag down a column for the same slot every week; ⌘/Ctrl-click adds single slots. Then type (e.g. initials) and press Enter to fill them all. Delete clears; Esc clears the selection, then closes.<?php else: ?>Select desk cells (drag, or Shift to extend), then Free / Occ / Clear. Tap a meeting-room or table slot to book it with your initials; tap your own booking again to clear it.<?php endif; ?></span>
     <span class="help-dot" tabindex="0" aria-label="Shortcuts and tips">?<span class="help-tip" role="tooltip"><b class="ht-title">Shortcuts &amp; tips</b><span class="ht-sec"><span class="ht-h">Editing</span>Drag, Shift or ⌘/Ctrl-click to select cells<br>⌘/Ctrl+F / +O / +C — free / occ / clear<br>Type into a selection, then Enter — fill all<br>Arrows &amp; Tab — move between cells<br>⌘/Ctrl+Z / +Shift+Z — undo / redo<br>Double-click a booking slot to edit it<br>Right-click a desk cell for Free / Occ / Clear</span><span class="ht-sec"><span class="ht-h">Navigate</span>⌘/Ctrl+1 / 2 / 3 / 4 — Day / Week / Month / +Month+<br>⌘/Ctrl+← / → — previous / next<br>⌘/Ctrl+. (or Home) — today<br>⌘/Ctrl+↑ / ↓ — scroll the grid</span><span class="ht-sec"><span class="ht-h">View</span>Double-click a desk name — open its year planner<br>Double-click a room name — open its 3-month room planner<br>⌘/Ctrl+E — focus on meeting space (hide desk offices)<br>⌘/Ctrl+A — show every room (ignore hide settings)<br>Two-colour disc — colour-blind palette</span></span></span>
 </div>
 </div>

@@ -1,6 +1,7 @@
 <?php
 require __DIR__ . '/../config.php';
 require_auth_api($pdo);
+require_admin_api($pdo); // setup-only endpoint: also needs the setup password when that gate is on
 header('Content-Type: application/json');
 
 api_guard(function () use ($pdo) {

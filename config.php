@@ -44,6 +44,10 @@ const ADMIN_PASSWORD = 'admin';
 // =============================================================================
 const DATA_DIR = __DIR__ . '/data';
 
+// Release version of this code (shown at the bottom of the Setup rooms page). Bumped by whoever
+// publishes a new release, together with an entry in CHANGELOG.md — not something to edit when deploying.
+const APP_VERSION = '1.0';
+
 $USE_SQLITE = true;
 
 // --- MySQL settings (only used if $USE_SQLITE = false) ---
@@ -474,6 +478,18 @@ function admin_auth_set_cookie(): void
     ]);
 }
 // Gate the setup page with its own password when enabled.
+// API counterpart of require_admin_page: the setup endpoints refuse (403) when the setup password
+// is switched on and this browser hasn't entered it today — so the API can't bypass the page gate.
+function require_admin_api(PDO $pdo): void
+{
+    if (admin_auth_enabled($pdo) && !is_admin_authed()) {
+        http_response_code(403);
+        header('Content-Type: application/json');
+        echo json_encode(['ok' => false, 'error' => 'Setup password required']);
+        exit;
+    }
+}
+
 function require_admin_page(PDO $pdo): void
 {
     if (admin_auth_enabled($pdo) && !is_admin_authed()) {

@@ -87,7 +87,7 @@ Notes:
   desk's **year planner**: a full-year calendar (12 month blocks, weekends greyed). Click a weekday to
   cycle occ → free → clear, or drag / Shift-click a range and use Free / Occ / Clear. **Right-click** a
   day for occ / free / morning-free / afternoon-free / clear. **⌘/Ctrl+← / →** switches year, **Esc**
-  closes, and **⌘/Ctrl+Z / Shift+Z** undo/redo within the planner. It sets whole days (both AM and PM)
+  closes (the first Esc only clears a selection, if there is one), and **⌘/Ctrl+Z / Shift+Z** undo/redo within the planner. It sets whole days (both AM and PM)
   and saves through the same storage, so it stays in sync with the grid; a day set to different AM/PM
   colours in the grid shows as a split (mixed) cell.
 - On a desktop, **double-click a bookable room's name** — an M/F/T room or an office's meeting-table
@@ -98,7 +98,8 @@ Notes:
   "every Tuesday 10:00"), **⌘/Ctrl-click** to add single slots (e.g. every other week), then **type**
   and press **Enter** to fill them all; **Delete** clears. A plain click selects rather than one-tap
   booking, so slots can be dragged over. Today's slots have a thick blue frame and the current week's
-  label is blue. ← / → move four weeks at a time; **Back to grid** returns to Week view. Saving, undo
+  label is blue. ← / → move four weeks at a time; the **×** button or **Esc** returns to the grid (Week view) — with slots selected, the first Esc just
+  clears the selection. Saving, undo
   /redo, the long-text tooltip, live refresh, and the occupied-office hint work exactly as in the grid.
 - Both planner icons are desktop-only: they're hidden on narrow screens and touch devices.
 - **⌘/Ctrl+↑ / ↓** scroll the page up/down when the table is taller than the window.
@@ -300,9 +301,28 @@ assets/style.css               Styling
 assets/icons.php               Inline SVG pictograms (desk, round table, big meeting, calling cell)
 schema_mysql.sql               Reference schema for MySQL setups
 INSTALL.md                     Step-by-step installation guide
+CHANGELOG.md                   Changes between versions (current version: APP_VERSION in config.php)
+tests/smoke.php                Command-line smoke test (php tests/smoke.php)
 LICENSE                        MIT licence
 .gitignore                     Keeps the runtime data/ out of version control
 ```
+
+## Testing changes
+
+Before committing or publishing a new version, run the smoke test from the app folder:
+
+```bash
+php tests/smoke.php
+```
+
+It needs only PHP. It copies the app to a temporary folder, starts PHP's built-in server on it with a
+throwaway database (your real data is never touched), and checks the server-side essentials: every
+page loads, saving and reading back work, both password gates hold (including the setup API), backups
+download / restore / purge correctly, and an old-format database upgrades cleanly. It prints one
+PASS/FAIL line per check and exits with 0 when all pass, 1 otherwise — so it can also run from a git
+hook or CI. Browser behaviour (dragging, typing, the planners, tooltips) isn't covered; the top of
+`tests/smoke.php` lists what to click through by hand after a JavaScript change. Run over the web, the
+script refuses to do anything.
 
 ## License
 

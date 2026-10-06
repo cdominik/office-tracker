@@ -77,7 +77,9 @@
         ctxMenu.style.top = Math.max(8, py) + 'px';
     }
     document.addEventListener('mousedown', (e) => { if (ctxMenu && !ctxMenu.hidden && !e.target.closest('.ctx-menu')) closeContextMenu(); });
-    document.addEventListener('keydown', (e) => { if (ctxMenu && !ctxMenu.hidden && e.key === 'Escape') closeContextMenu(); });
+    document.addEventListener('keydown', (e) => {
+        if (ctxMenu && !ctxMenu.hidden && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); closeContextMenu(); }
+    });
     window.addEventListener('resize', closeContextMenu);
     const isMouse = () => window.matchMedia('(pointer: fine)').matches;
 
@@ -144,7 +146,7 @@
         if (cancel) cancel.addEventListener('click', close);
         if (go) go.addEventListener('click', () => { window.location = 'admin.php'; });
         gate.addEventListener('click', (e) => { if (e.target === gate) close(); }); // click backdrop
-        document.addEventListener('keydown', (e) => { if (!gate.hidden && e.key === 'Escape') { e.preventDefault(); close(); } });
+        document.addEventListener('keydown', (e) => { if (!gate.hidden && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); } });
     })();
 
     // If we just arrived here via a day-swipe, slide the new grid in from the swipe direction.
@@ -633,6 +635,15 @@
 
     document.addEventListener('keydown', (e) => {
         if (editorInput) return; // the inline editor handles its own keys
+        // Room planner: Esc closes it (like the year planner) — back to the grid.
+        // Two-step, like the year planner: the first Esc clears a selection, the next one closes.
+        if (planMode && e.key === 'Escape' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            e.preventDefault();
+            if (selected.size > 0) { clearSelection(); setActive(null); return; }
+            const pc = document.getElementById('planClose');
+            if (pc) window.location = pc.href;
+            return;
+        }
         const mod = e.metaKey || e.ctrlKey;
         const yo = document.getElementById('yearOverlay');
         if (yo && !yo.hidden) {
@@ -1551,7 +1562,11 @@
         overlay.addEventListener('mousedown', (e) => { if (e.target === overlay) close(); });
         document.addEventListener('keydown', (e) => {
             if (overlay.hidden) return;
-            if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+            if (e.key === 'Escape') { // two-step: first clear a selection, then close
+                e.preventDefault();
+                if (selected.size > 0) clearSel(); else close();
+                return;
+            }
             const mod = e.metaKey || e.ctrlKey;
             if (mod && e.key === 'ArrowLeft') { e.preventDefault(); year--; load(); }
             else if (mod && e.key === 'ArrowRight') { e.preventDefault(); year++; load(); }

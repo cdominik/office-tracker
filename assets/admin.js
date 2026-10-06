@@ -25,6 +25,7 @@
         })
             .then((r) => {
                 if (r.status === 401) { window.location = 'login.php'; return null; }
+                if (r.status === 403) { window.location = 'login.php?admin=1&next=admin.php'; return null; }
                 return r.json();
             })
             .then((d) => {
@@ -99,7 +100,8 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ field: 'purge_old' }),
             })
-                .then((r) => { if (r.status === 401) { window.location = 'login.php'; return null; } return r.json(); })
+                .then((r) => { if (r.status === 401) { window.location = 'login.php'; return null; }
+                if (r.status === 403) { window.location = 'login.php?admin=1&next=admin.php'; return null; } return r.json(); })
                 .then((d) => {
                     if (!d) return;
                     if (!d.ok) { showIndicator(d.error || 'Error', true); return; }

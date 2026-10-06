@@ -241,7 +241,6 @@ $typeNames = [
 <body>
 <div class="topbar">
     <h1>Setup rooms</h1>
-    <a class="btn" href="index.php">&larr; Back to tracker</a>
 </div>
 
 <div class="admin-wrap">
@@ -255,6 +254,7 @@ $typeNames = [
         <a href="#settings">Settings</a>
         <a href="#rooms">Rooms</a>
         <a href="#danger">Danger zone</a>
+        <a class="jump-back" href="index.php">&larr; Back to tracker</a>
     </nav>
 
     <section id="settings" class="admin-section sec-settings">
@@ -503,6 +503,8 @@ $typeNames = [
         </div>
     </div>
     </section>
+
+    <p class="admin-version">Office Planner <?= h(APP_VERSION) ?> · see <code>CHANGELOG.md</code> for changes between versions</p>
 </div>
 
 <div class="save-indicator" id="saveIndicator"></div>

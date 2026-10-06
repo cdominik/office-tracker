@@ -1393,3 +1393,11 @@ body.view-room .toolbar .do-wrap { display: none; }
 @media (max-width: 759px), (pointer: coarse) {
     .year-open { display: none; }
 }
+
+/* Version line at the bottom of the setup page */
+.admin-version { margin: 4px 2px 24px; font-size: 12px; color: var(--text-faint); text-align: center; }
+.admin-version code { font-size: 11px; }
+
+/* "Back to tracker" rides along in the sticky jump bar, pushed to the right edge. */
+.admin-jumpbar .jump-back { margin-left: auto; color: var(--accent); border-color: var(--accent); }
+.admin-jumpbar .jump-back:hover { background: var(--accent-bg); }
