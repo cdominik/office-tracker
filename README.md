@@ -324,6 +324,10 @@ hook or CI. Browser behaviour (dragging, typing, the planners, tooltips) isn't c
 `tests/smoke.php` lists what to click through by hand after a JavaScript change. Run over the web, the
 script refuses to do anything.
 
+**When you change the code:** if the change adds or alters server-side behaviour (a new page, endpoint,
+setting, database column, or migration), add a check for it to `tests/smoke.php` in the same commit, and
+make sure the whole suite still passes before committing.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE). © 2026 Carsten Dominik.

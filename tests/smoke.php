@@ -11,6 +11,10 @@
  * Report: one PASS/FAIL line per check on the terminal, then a summary. Exit code 0 = all passed,
  *        1 = something failed (usable from a git hook or CI). Nothing is sent or stored anywhere.
  *
+ * MAINTAINERS (human or AI): whenever a change adds or alters server-side behaviour — a new page,
+ * endpoint, setting, database column, or migration — add a check for it here in the same commit,
+ * and keep the whole suite passing. That way this test keeps covering the app as it grows.
+ *
  * Not covered (browser behaviour — click through by hand after JavaScript changes):
  *   - Select desk cells by dragging; Free / Occ / Clear; right-click menu acts on the selection.
  *   - Type into a selection + Enter fills all; ⌘/Ctrl+Z / Shift+Z undo / redo.
