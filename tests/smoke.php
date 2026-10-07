@@ -21,7 +21,8 @@
  *   - One-tap booking in the grid; the occupied-office tint and "Book anyway" confirmation.
  *   - Year planner (double-click a desk name): click / drag / right-click, today frame, undo,
  *     and the grid updating when it closes.
- *   - Room planner (double-click a room name): drag down a column, type, Enter fills every week.
+ *   - Room planner (double-click a room name): a click books / clears your initials; drag down a
+ *     column, type, Enter fills every week; double-click edits; Esc clears selection, then closes.
  *   - Long-text tooltip on hover (only when clipped); current-time line in Day / Week view.
  *   - Meeting-space focus (⌘/Ctrl+E); colour-blind palette and dark mode.
  */

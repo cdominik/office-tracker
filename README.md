@@ -96,8 +96,9 @@ Notes:
   (Mon–Fri, 9–16). The same slot in consecutive weeks lines up vertically, so a repeated meeting is
   one drag: **click or drag to select** (dragging selects a rectangle, e.g. straight down a column for
   "every Tuesday 10:00"), **⌘/Ctrl-click** to add single slots (e.g. every other week), then **type**
-  and press **Enter** to fill them all; **Delete** clears. A plain click selects rather than one-tap
-  booking, so slots can be dragged over. Today's slots have a thick blue frame and the current week's
+  and press **Enter** to fill them all; **Delete** clears. A plain click (without dragging) books the
+  slot with your initials and clicking your own booking clears it, just as in the grid; double-click to
+  type a longer label. Today's slots have a thick blue frame and the current week's
   label is blue. ← / → move four weeks at a time; the **×** button or **Esc** returns to the grid (Week view) — with slots selected, the first Esc just
   clears the selection. Saving, undo
   /redo, the long-text tooltip, live refresh, and the occupied-office hint work exactly as in the grid.

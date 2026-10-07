@@ -12,3 +12,5 @@ empty "Unreleased" section above it, and set `APP_VERSION` in `config.php` to ma
 admin must do when upgrading (usually nothing: the database migrates itself).
 
 ## Unreleased
+- Room planner: a plain click now books a slot with your initials (and clears your own), as in the
+  grid; dragging still selects.

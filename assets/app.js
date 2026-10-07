@@ -191,6 +191,7 @@
     let editorPrevText = ''; // text a cell held before its editor opened (for undo)
     let touchSelectMode = false; // mobile long-press multi-select mode
     const planMode = !!(window.TRACKER && window.TRACKER.view === 'room'); // 3-month room planner
+    let planTap = null; // planner: slot pressed without dragging yet (books on release)
     let currentRevision = (window.TRACKER && typeof window.TRACKER.revision !== 'undefined')
         ? window.TRACKER.revision : null;
 
@@ -544,7 +545,8 @@
             // One-tap booking: a plain click on a meeting-room / table slot inserts your
             // initials (or clears them if the slot already holds yours). Desk cells and
             // modifier-clicks fall through to normal selection.
-            // (In the room planner a plain click selects instead, so slots can be dragged over.)
+            // (In the room planner the press starts a drag instead; the one-tap booking happens on
+            // release if the mouse didn't move to another slot — see planTap / mouseup.)
             if (cell.dataset.kind === 'booking' && !planMode && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                 quickBook(cell);
                 return;
@@ -578,6 +580,7 @@
             dragKey = cell.dataset.rowKey;
             dragAnchorIndex = indexInRow(cell);
             selectSingle(cell); // also sets the anchor used by the planner's rectangular drag
+            if (planMode && cell.dataset.kind === 'booking') planTap = cell; // may become a one-tap booking
         });
 
         cell.addEventListener('dblclick', () => {
@@ -591,15 +594,23 @@
         if (!el) return;
         const cell = el.closest('.cell');
         if (!cell) return;
-        if (planMode) { selectRectTo(cell); return; } // room planner: rectangle across weeks
+        if (planMode) {                                // room planner: rectangle across weeks
+            if (cell !== planTap) planTap = null;      // moved to another slot: it's a drag, not a tap
+            selectRectTo(cell);
+            return;
+        }
         if (cell.dataset.rowKey !== dragKey) return;
         const idx = indexInRow(cell);
         selectRangeInRow(dragKey, dragAnchorIndex, idx);
         setActive(rowsByKey[dragKey][dragAnchorIndex]);
     });
 
-    document.addEventListener('mouseup', () => {
+    document.addEventListener('mouseup', (e) => {
         isDragging = false;
+        // Room planner: a click that didn't drag books (or clears your own) slot, as in the grid.
+        const tap = planTap;
+        planTap = null;
+        if (tap && e.button === 0 && e.target.closest && e.target.closest('.cell') === tap) quickBook(tap);
     });
 
     // ---- Keyboard ----
