@@ -1401,3 +1401,10 @@ body.view-room .toolbar .do-wrap { display: none; }
 /* "Back to tracker" rides along in the sticky jump bar, pushed to the right edge. */
 .admin-jumpbar .jump-back { margin-left: auto; color: var(--accent); border-color: var(--accent); }
 .admin-jumpbar .jump-back:hover { background: var(--accent-bg); }
+
+/* Arriving via a day/week swipe: the new grid slides in from the swipe direction, starting with its
+   very first paint (the class is set in <head> before anything is drawn). */
+@keyframes op-slide-from-right { from { transform: translateX(100vw); } to { transform: none; } }
+@keyframes op-slide-from-left  { from { transform: translateX(-100vw); } to { transform: none; } }
+html.slide-in-next .grid-wrap { animation: op-slide-from-right .2s ease-out; }
+html.slide-in-prev .grid-wrap { animation: op-slide-from-left .2s ease-out; }

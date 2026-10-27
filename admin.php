@@ -466,10 +466,10 @@ $typeNames = [
             <p class="admin-note">No snapshots yet — one will be created shortly after the tracker is next opened.</p>
         <?php else: ?>
             <ul class="admin-people-list">
-                <?php foreach (array_slice($backups, 0, 20) as $bfile):
+                <?php foreach ($backups as $bfile): // all of them — retention keeps the automatic list short
                     $bn = basename($bfile);
                     $kept = backup_is_kept($bfile);
-                    $when = date('D j M Y, H:i', filemtime($bfile)); ?>
+                    $when = date('D j M Y, H:i', backup_time($bfile)); ?>
                     <li class="lo-desk-row">
                         <span class="line-label" style="max-width:none;">
                             <span class="backup-tag <?= $kept ? 'tag-kept' : 'tag-auto' ?>"><?= $kept ? 'Kept' : 'Auto' ?></span>

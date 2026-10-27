@@ -375,6 +375,12 @@ $navRoom = ($view === 'room') ? '&room=' . (int)$planRoom['id'] : ''; // keep th
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Office Planner</title>
 <script src="<?= asset_url('assets/theme.js') ?>"></script>
+<script>
+// Arriving via a day/week swipe: mark <html> before the first paint so the new grid's very first
+// frame is the start of its slide-in (CSS animation), instead of appearing and then sliding.
+(function () { try { var d = sessionStorage.getItem('op_slide'); if (d === 'next' || d === 'prev') {
+    document.documentElement.classList.add('slide-in-' + d); } sessionStorage.removeItem('op_slide'); } catch (e) {} })();
+</script>
 <link rel="icon" href="<?= asset_url('favicon.ico') ?>" sizes="any">
 <link rel="icon" href="<?= asset_url('assets/favicon.svg') ?>" type="image/svg+xml">
 <link rel="icon" href="<?= asset_url('assets/favicon-32.png') ?>" sizes="32x32" type="image/png">
@@ -659,6 +665,15 @@ $navRoom = ($view === 'room') ? '&room=' . (int)$planRoom['id'] : ''; // keep th
     </tbody>
 </table>
 <?php endif; ?>
+<script>
+// Moving through dates (swipe, ← / →, Today) keeps you at the same rows: restore the grid's scroll
+// position saved just before navigating, before anything is shown — but only within the same view.
+(function () { try {
+    var s = JSON.parse(sessionStorage.getItem('op_scroll') || 'null');
+    sessionStorage.removeItem('op_scroll');
+    if (s && s.view === <?= json_encode($view) ?>) document.currentScript.parentNode.scrollTop = s.y;
+} catch (e) {} })();
+</script>
 </div>
 
 <div class="save-indicator" id="saveIndicator"></div>

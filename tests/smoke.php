@@ -24,6 +24,7 @@
  *   - Room planner (double-click a room name): a click books / clears your initials; drag down a
  *     column, type, Enter fills every week; double-click edits; Esc clears selection, then closes.
  *   - Long-text tooltip on hover (only when clipped); current-time line in Day / Week view.
+ *   - Phone, Day / Week view: swipe changes the date, the new grid slides in once, scroll position kept.
  *   - Meeting-space focus (⌘/Ctrl+E); colour-blind palette and dark mode.
  */
 
@@ -259,6 +260,54 @@ check('Restore saved the previous state first (undoable)', count(kept_backups())
 $beforePurge = count(kept_backups());
 $r = post_json('api/admin_update.php', ['field' => 'purge_old']);
 check('Purge runs and takes a backup first', ($r['json']['ok'] ?? false) === true && count(kept_backups()) === $beforePurge + 1, $r['body']);
+
+// Retention over time: simulate 60 days of daily automatic backups (plus two manual ones) in a
+// separate temporary copy, running the rotation after each day as the app does.
+$rotDir = $tmp . '-rotation';
+copy_tree($src, $rotDir);
+file_put_contents("$rotDir/rotation_sim.php", <<<'SIM'
+<?php
+require __DIR__ . '/config.php';
+backups_ensure_dir();
+$start = strtotime('2020-03-02 09:00');
+for ($day = 0; $day < 60; $day++) {
+    $now = $start + $day * 86400;
+    $f = BACKUP_DIR . '/tracker-' . date('Y-m-d_H-i-s', $now) . '.sqlite';
+    file_put_contents($f, 'x'); touch($f, $now);
+    if ($day === 3 || $day === 20) {
+        $k = BACKUP_DIR . '/tracker-keep-' . date('Y-m-d_H-i-s', $now + 60) . '.sqlite';
+        file_put_contents($k, 'x'); touch($k, $now + 60);
+    }
+    backups_rotate($now);
+}
+$survey = function () use ($now, $start) {
+    $auto = []; $kept = 0;
+    foreach (backups_list() as $f) {
+        if (backup_is_kept($f)) { $kept++; continue; }
+        $t = backup_time($f);
+        if ($t < $start + 365 * 86400) $auto[] = (int)round(($now - $t) / 86400); // ignore any real-time snapshot
+    }
+    sort($auto);
+    return ['auto' => $auto, 'kept' => $kept];
+};
+$before = $survey();
+// Copying / uploading the data folder often resets every file's modification time to "now".
+// The clean-up must judge age by the date in the file name, so nothing more may disappear.
+foreach (glob(BACKUP_DIR . '/*.sqlite') as $f) touch($f);
+backups_rotate($now);
+echo json_encode($before + ['afterTouch' => $survey()]);
+SIM);
+$rot = json_decode((string)shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg("$rotDir/rotation_sim.php")), true) ?: [];
+rm_tree($rotDir);
+$ages = $rot['auto'] ?? [];
+sort($ages);
+$daily = array_values(array_filter($ages, fn($a) => $a <= 7));
+check('Retention keeps a daily backup for the last week', $daily === range(0, 7), implode(',', $ages));
+check('Retention keeps weekly backups back to about a month', $ages && max($ages) >= 20 && max($ages) <= 28, 'oldest: ' . ($ages ? max($ages) : '-') . ' days');
+check('Retention never deletes kept (manual) backups', ($rot['kept'] ?? 0) === 2, 'kept: ' . ($rot['kept'] ?? '-'));
+$after = $rot['afterTouch'] ?? [];
+check('Retention survives copied backups (reset file times)', ($after['auto'] ?? null) === $ages && ($after['kept'] ?? 0) === 2,
+    'left: ' . implode(',', $after['auto'] ?? []) . ' / kept ' . ($after['kept'] ?? '-'));
 
 section('Upgrade from an old database');
 stop_server();

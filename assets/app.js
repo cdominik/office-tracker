@@ -149,22 +149,22 @@
         document.addEventListener('keydown', (e) => { if (!gate.hidden && e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); } });
     })();
 
-    // If we just arrived here via a day-swipe, slide the new grid in from the swipe direction.
-    (function slideInOnArrival() {
-        let dir = null;
-        try { dir = sessionStorage.getItem('op_slide'); if (dir) sessionStorage.removeItem('op_slide'); } catch (e) {}
-        if (!dir || (window.TRACKER.view !== 'day' && window.TRACKER.view !== 'week')) return;
+    // Arrived via a swipe: the slide-in was started before the first paint (class set in <head>,
+    // CSS animation). Remove the class once it has played so later swipes start from a clean state.
+    (function endSlideIn() {
+        const root = document.documentElement;
+        if (!root.classList.contains('slide-in-next') && !root.classList.contains('slide-in-prev')) return;
+        setTimeout(() => root.classList.remove('slide-in-next', 'slide-in-prev'), 300);
+    })();
+
+    // Remember how far down the grid is scrolled, so the page we navigate to (same view, other
+    // dates) opens at the same rows. Restored by an inline script right after the grid markup.
+    function rememberScroll() {
         const gw = document.querySelector('.grid-wrap');
         if (!gw) return;
-        const from = (dir === 'next' ? window.innerWidth : -window.innerWidth);
-        gw.style.transition = 'none';
-        gw.style.transform = 'translateX(' + from + 'px)';
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-            gw.style.transition = 'transform .2s ease-out';
-            gw.style.transform = 'translateX(0)';
-        }));
-        setTimeout(() => { gw.style.transition = ''; gw.style.transform = ''; }, 300);
-    })();
+        try { sessionStorage.setItem('op_scroll', JSON.stringify({ view: window.TRACKER.view, y: gw.scrollTop })); } catch (e) {}
+    }
+    document.querySelectorAll('.nav-btn').forEach((a) => a.addEventListener('click', rememberScroll));
     const saveIndicator = document.getElementById('saveIndicator');
     const toolbarHint = document.getElementById('toolbarHint');
     const defaultHint = toolbarHint ? toolbarHint.textContent : '';
@@ -620,6 +620,7 @@
     }
     function gotoRef(ref) {
         // Staying in the same view (incl. monthx) is carried in the view itself.
+        rememberScroll();
         const room = window.TRACKER.room ? '&room=' + encodeURIComponent(window.TRACKER.room) : '';
         window.location = '?view=' + encodeURIComponent(window.TRACKER.view) + room + '&ref=' + encodeURIComponent(ref);
     }

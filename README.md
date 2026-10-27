@@ -82,7 +82,8 @@ Notes:
   so it stays while you page between months and you return to plain Month/Week/Day by choosing them.
 - On a touch device in **Day or Week view**, swipe left/right on the grid to move to the next/previous
   day or week (vertical scrolling and taps to select/book are unaffected). The Month views aren't
-  offered on phones.
+  offered on phones. Moving to another day or week — by swipe, the ← / → / Today buttons, or the
+  keyboard — keeps the grid scrolled to the same rows.
 - On a desktop, **double-click a desk name** — or click the small 12-dot icon after it — to open that
   desk's **year planner**: a full-year calendar (12 month blocks, weekends greyed). Click a weekday to
   cycle occ → free → clear, or drag / Shift-click a range and use Free / Occ / Clear. **Right-click** a

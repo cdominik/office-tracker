@@ -99,11 +99,24 @@ function backups_ensure_dir(): void
     if (!is_file($ht)) { @file_put_contents($ht, "Require all denied\nDeny from all\n"); }
 }
 
+// When a backup was taken. Taken from the timestamp in its file name (tracker-[keep-]YYYY-MM-DD_HH-ii-ss…),
+// which is written at creation and survives copying, uploading, or moving the data folder — unlike the
+// file's modification time, which many tools reset to "now" (that made every backup look brand-new, and
+// the clean-up then kept only one). Falls back to the modification time for unexpected names.
+function backup_time(string $file): int
+{
+    if (preg_match('/^tracker-(?:keep-)?(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})/', basename($file), $m)) {
+        $dt = DateTime::createFromFormat('Y-m-d_H-i-s', $m[1]);
+        if ($dt !== false) return $dt->getTimestamp();
+    }
+    return (int)filemtime($file);
+}
+
 function backups_list(): array
 {
     if (!is_dir(BACKUP_DIR)) { return []; }
     $files = glob(BACKUP_DIR . '/tracker-*.sqlite') ?: [];
-    usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a)); // newest first
+    usort($files, fn($a, $b) => backup_time($b) <=> backup_time($a)); // newest first
     return $files;
 }
 
@@ -113,23 +126,31 @@ function backup_is_kept(string $file): bool
     return strpos(basename($file), 'tracker-keep-') === 0;
 }
 
-function backups_rotate(): void
+// Retention for AUTOMATIC snapshots ("Kept" ones are never touched):
+//   - one per calendar day for the last BACKUP_DAILY_DAYS days,
+//   - then one per calendar (ISO) week for BACKUP_WEEKLY_WEEKS more weeks,
+//   - anything older is deleted.
+// Buckets are calendar days / weeks of the snapshot's own date, so they don't shift as time passes
+// and a week's survivor stays put. (An earlier version bucketed by age, which let each new day's
+// snapshot push the previous one out — nothing survived past about 8 days.)
+// $now is a parameter only so the smoke test can simulate weeks of use.
+function backups_rotate(?int $now = null): void
 {
-    $now = time();
-    $keptDay = [];   // one automatic snapshot per calendar day for the first week
-    $keptWeek = [];  // then one per 7-day bucket for a few more weeks
+    $now = $now ?? time();
+    $keptDay = [];
+    $keptWeek = [];
     foreach (backups_list() as $f) {              // newest first
         if (backup_is_kept($f)) { continue; }     // manual / pre-purge backups persist until deleted by hand
-        $age = $now - filemtime($f);
-        $days = $age / 86400;
+        $m = backup_time($f);
+        $days = ($now - $m) / 86400;
         if ($days <= BACKUP_DAILY_DAYS) {
-            $day = date('Y-m-d', filemtime($f));
-            if (isset($keptDay[$day])) { @unlink($f); } else { $keptDay[$day] = true; }
+            $key = date('Y-m-d', $m);             // newest snapshot of each calendar day
+            if (isset($keptDay[$key])) { @unlink($f); } else { $keptDay[$key] = true; }
         } elseif ($days <= BACKUP_DAILY_DAYS + BACKUP_WEEKLY_WEEKS * 7) {
-            $wk = (int)floor($age / (7 * 86400));
-            if (isset($keptWeek[$wk])) { @unlink($f); } else { $keptWeek[$wk] = true; }
+            $key = date('o-W', $m);               // newest snapshot of each calendar week
+            if (isset($keptWeek[$key])) { @unlink($f); } else { $keptWeek[$key] = true; }
         } else {
-            @unlink($f);                            // older than ~1 month
+            @unlink($f);                          // older than about a month
         }
     }
 }
@@ -198,7 +219,7 @@ function run_backup_if_due(PDO $pdo): void
     global $USE_SQLITE;
     if (!$USE_SQLITE) { return; }
     $list = backups_list();
-    if ($list && (time() - filemtime($list[0])) < BACKUP_MIN_INTERVAL) { return; } // recent enough
+    if ($list && (time() - backup_time($list[0])) < BACKUP_MIN_INTERVAL) { return; } // recent enough
 
     // Only one process should snapshot when due (40 users can pass the check at once). A
     // non-blocking lock means whoever gets it does the backup; everyone else skips instantly.
@@ -208,7 +229,7 @@ function run_backup_if_due(PDO $pdo): void
     if (flock($lock, LOCK_EX | LOCK_NB)) {
         // Re-check inside the lock in case another process just finished one.
         $list = backups_list();
-        if (!$list || (time() - filemtime($list[0])) >= BACKUP_MIN_INTERVAL) {
+        if (!$list || (time() - backup_time($list[0])) >= BACKUP_MIN_INTERVAL) {
             backup_create($pdo);
         }
         flock($lock, LOCK_UN);

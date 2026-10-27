@@ -14,3 +14,12 @@ admin must do when upgrading (usually nothing: the database migrates itself).
 ## Unreleased
 - Room planner: a plain click now books a slot with your initials (and clears your own), as in the
   grid; dragging still selects.
+- Day/Week swipe on phones: the new day or week now slides in once (it no longer appears first and
+  then slides in again), and the grid keeps its scroll position. The ← / → / Today buttons and keyboard
+  date navigation keep the scroll position too.
+- Backups: fixed retention. Automatic backups were deleted after about 8 days instead of being kept
+  weekly for about a month (most visible right after "Back up now", which runs the clean-up). Kept
+  backups were never affected. The Backups panel now lists all backups instead of the newest 20.
+- Backups: a backup's age is now read from the date in its file name, not the file's modification
+  time. Copying or uploading the data folder resets modification times, which made every automatic
+  backup look brand-new so the clean-up kept only one.
